@@ -1,21 +1,256 @@
 {
   "name": "open-skills",
-  "displayName": "Open-skills",
-  "description": "A utility to manage agnet skills effeciently",
-  "version": "0.0.1",
+  "displayName": "Open Skills",
+  "description": "Intelligent skill manager for AI-assisted development environments — discover, visualize, and sync SKILL.md files across your workspace.",
+  "version": "0.1.0",
+  "publisher": "open-skills",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/open-skills/open-skills"
+  },
+  "bugs": {
+    "url": "https://github.com/open-skills/open-skills/issues"
+  },
+  "homepage": "https://github.com/open-skills/open-skills#readme",
+  "keywords": [
+    "ai",
+    "skills",
+    "cursor",
+    "agent",
+    "skill-manager",
+    "developer-tools",
+    "productivity"
+  ],
   "engines": {
-    "vscode": "^1.109.0"
+    "vscode": "^1.90.0"
   },
   "categories": [
-    "Other"
+    "Other",
+    "Programming Languages"
   ],
-  "activationEvents": [],
+  "galleryBanner": {
+    "color": "#0e1117",
+    "theme": "dark"
+  },
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./dist/extension.js",
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "openSkills",
+          "title": "Open Skills",
+          "icon": "$(symbol-misc)"
+        }
+      ]
+    },
+    "views": {
+      "openSkills": [
+        {
+          "icon": "./logo.png",
+          "id": "openSkillsView",
+          "name": "Skills",
+          "contextualTitle": "Open Skills"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "openSkillsView",
+        "contents": "No skills detected yet.\n\n[Scan Workspace](command:open-skills.rescan)\n\nConfigure additional scan paths in [settings](command:open-skills.openSettings)."
+      }
+    ],
     "commands": [
       {
-        "command": "open-skills.helloWorld",
-        "title": "Hello World"
+        "command": "open-skills.rescan",
+        "title": "Rescan Workspace",
+        "category": "Open Skills",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "open-skills.openGapAnalysis",
+        "title": "Open Gap Analysis",
+        "category": "Open Skills",
+        "icon": "$(pulse)"
+      },
+      {
+        "command": "open-skills.openAbout",
+        "title": "About Open Skills",
+        "category": "Open Skills",
+        "icon": "$(info)"
+      },
+      {
+        "command": "open-skills.openSettings",
+        "title": "Settings",
+        "category": "Open Skills",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "open-skills.resetOnboarding",
+        "title": "Reset Onboarding",
+        "category": "Open Skills"
+      },
+      {
+        "command": "open-skills.viewSkill",
+        "title": "View Skill",
+        "category": "Open Skills",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "open-skills.importSkillFromTree",
+        "title": "Import Skill",
+        "category": "Open Skills",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "open-skills.importSkillFromHover",
+        "title": "Import Skill (Hover)",
+        "category": "Open Skills"
+      },
+      {
+        "command": "open-skills.deleteSkill",
+        "title": "Delete Skill",
+        "category": "Open Skills",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "open-skills.importAllMissingSkills",
+        "title": "Import All Missing",
+        "category": "Open Skills",
+        "icon": "$(cloud-download)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "open-skills.rescan",
+          "when": "view == openSkillsView",
+          "group": "navigation"
+        },
+        {
+          "command": "open-skills.openGapAnalysis",
+          "when": "view == openSkillsView",
+          "group": "navigation"
+        },
+        {
+          "command": "open-skills.openSettings",
+          "when": "view == openSkillsView",
+          "group": "navigation"
+        },
+        {
+          "command": "open-skills.openAbout",
+          "when": "view == openSkillsView",
+          "group": "overflow"
+        },
+        {
+          "command": "open-skills.resetOnboarding",
+          "when": "view == openSkillsView",
+          "group": "overflow"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "open-skills.importSkillFromTree",
+          "when": "view == openSkillsView && viewItem == 'skillItem.active.unsynced' || view == openSkillsView && viewItem == 'skillItem.missing'",
+          "group": "inline"
+        },
+        {
+          "command": "open-skills.deleteSkill",
+          "when": "view == openSkillsView && viewItem =~ /^skillItem\\.(active\\.(synced|unsynced)|imported)$/",
+          "group": "inline"
+        },
+        {
+          "command": "open-skills.importAllMissingSkills",
+          "when": "view == openSkillsView && viewItem == 'skillGroupMissing'",
+          "group": "inline"
+        },
+        {
+          "command": "open-skills.viewSkill",
+          "when": "view == openSkillsView && viewItem =~ /^skillItem\\./",
+          "group": "inline"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Open Skills",
+      "properties": {
+        "open-skills.customScanPaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Additional relative paths to scan for `SKILL.md` files. Example: `[\".windsurf/rules\", \"docs/skills\"]`",
+          "scope": "resource"
+        },
+        "open-skills.targetImportPath": {
+          "type": "string",
+          "default": ".agent/skills",
+          "markdownDescription": "Relative path within the workspace where imported skills will be placed.",
+          "scope": "resource"
+        },
+        "open-skills.globalSkillsPath": {
+          "type": "string",
+          "default": "~/open-skills",
+          "markdownDescription": "Path to your global 'My Skills' directory. Defaults to `~/open-skills`.",
+          "scope": "window"
+        },
+        "open-skills.showStatusBar": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show skill status in the VS Code status bar.",
+          "scope": "window"
+        },
+        "open-skills.scanOnStartup": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically scan the workspace when the extension activates.",
+          "scope": "window"
+        }
+      }
+    },
+    "walkthroughs": [
+      {
+        "id": "openSkills.gettingStarted",
+        "title": "Getting Started with Open Skills",
+        "description": "Set up AI skill management in your workspace in minutes.",
+        "steps": [
+          {
+            "id": "openSkills.step.activate",
+            "title": "Activate the Extension",
+            "description": "Open the Open Skills panel from the activity bar on the left.\n\n[Open Open Skills Panel](command:openSkillsView.focus)",
+            "media": {
+              "markdown": "Explore the sidebar to see detected skills grouped by status."
+            }
+          },
+          {
+            "id": "openSkills.step.scan",
+            "title": "Scan Your Workspace",
+            "description": "Click Rescan to detect all `SKILL.md` files in your project.\n\n[Rescan Workspace](command:open-skills.rescan)",
+            "media": {
+              "markdown": "Open Skills searches `.agent/skills`, `.cursor/rules`, `.cursor/skills`, and any custom paths you configure."
+            }
+          },
+          {
+            "id": "openSkills.step.analyze",
+            "title": "Analyze Skill Gaps",
+            "description": "View your skill coverage and import missing skills with one click.\n\n[Open Gap Analysis](command:open-skills.openGapAnalysis)",
+            "media": {
+              "markdown": "See which skills are active, missing, or imported in your environment."
+            }
+          },
+          {
+            "id": "openSkills.step.configure",
+            "title": "Customize Settings",
+            "description": "Add custom scan paths, change the import directory, and more.\n\n[Open Settings](command:open-skills.openSettings)",
+            "media": {
+              "markdown": "All settings support workspace-level configuration so your team shares the same setup."
+            }
+          }
+        ]
       }
     ]
   },
@@ -34,7 +269,7 @@
     "test": "vscode-test"
   },
   "devDependencies": {
-    "@types/vscode": "^1.109.0",
+    "@types/vscode": "^1.90.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "22.x",
     "typescript-eslint": "^8.54.0",

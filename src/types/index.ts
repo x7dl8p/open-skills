@@ -54,4 +54,36 @@ export interface ExtensionConfig {
     scanOnStartup: boolean;
 }
 
+export interface SkillRepository {
+    owner: string;
+    repo: string;
+    path: string;
+    branch: string;
+    singleSkill?: boolean;
+}
+
+export interface SkillMetadata {
+    name: string;
+    description: string;
+    license?: string;
+    compatibility?: string;
+    allowedTools?: string;
+}
+
+export interface MarketplaceSkill {
+    name: string;
+    description: string;
+    license?: string;
+    compatibility?: string;
+    source: SkillRepository;
+    skillPath: string;
+    fullContent: string;
+    bodyContent: string;
+}
+
+export interface CacheEntry<T> {
+    data: T;
+    timestamp: number;
+}
+
 export * from "../constants";

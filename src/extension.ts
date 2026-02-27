@@ -6,12 +6,36 @@ import { GapAnalyzer } from "./services/GapAnalyzer";
 import { ConfigService } from "./services/ConfigService";
 import { SkillHoverProvider, SkillDecorationProvider } from "./decorations/SkillHoverProvider";
 import { SkillTreeProvider, SkillTreeItem } from "./providers/SkillTreeProvider";
+import { MarketplaceTreeProvider } from "./providers/MarketplaceTreeProvider";
+import { GitHubSkillsClient } from "./github/GitHubSkillsClient";
 import { runOnboardingWizard } from "./onboarding/OnboardingWizard";
 import { showAboutPanel } from "./webviews/AboutPanel";
 import { GapAnalysisPanel } from "./webviews/GapAnalysisPanel";
-import { SkillDefinition } from "./types";
+import { SkillDefinition, MarketplaceSkill } from "./types";
 
 import { DEFAULT_SCAN_PATHS } from "./constants";
+
+const ANALYTICS_KEY = "openSkills.analytics";
+
+interface SkillAnalytics {
+	totalInstalled: number;
+	totalDeleted: number;
+	totalImported: number;
+	lastScanDate: string;
+}
+
+function loadAnalytics(state: vscode.Memento): SkillAnalytics {
+	return state.get<SkillAnalytics>(ANALYTICS_KEY, {
+		totalInstalled: 0,
+		totalDeleted: 0,
+		totalImported: 0,
+		lastScanDate: "",
+	});
+}
+
+async function saveAnalytics(state: vscode.Memento, analytics: SkillAnalytics): Promise<void> {
+	await state.update(ANALYTICS_KEY, analytics);
+}
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
 	let skills: SkillDefinition[] = [];
@@ -40,6 +64,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	const hoverProvider = new SkillHoverProvider();
 	const decorationProvider = new SkillDecorationProvider();
 
+	const githubClient = new GitHubSkillsClient(context);
+	const marketplaceProvider = new MarketplaceTreeProvider(githubClient, context);
+
+	const analytics = loadAnalytics(context.globalState);
+
 	const statusBarItem = vscode.window.createStatusBarItem(
 		vscode.StatusBarAlignment.Left,
 		90
@@ -53,6 +82,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	}
 
 	vscode.window.registerTreeDataProvider("openSkillsView", treeProvider);
+	vscode.window.registerTreeDataProvider("openSkillsMarketplaceView", marketplaceProvider);
 
 	context.subscriptions.push(
 		vscode.languages.registerHoverProvider({ scheme: "file" }, hoverProvider)
@@ -105,9 +135,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				const gapResult = gapAnalyzer.analyze(activeSkills, globalSkills);
 				skills = [...activeSkills, ...globalSkills, ...gapResult.missing];
 
+				const installedSet = new Set(skills.filter(s => s.status !== "missing").map(s => s.name));
+				marketplaceProvider.setInstalledSkills(installedSet);
+
 				hoverProvider.updateSkills(skills);
 				decorationProvider.updateSkills(skills);
 				treeProvider.refresh(skills);
+
+				analytics.lastScanDate = new Date().toISOString();
+				await saveAnalytics(context.globalState, analytics);
 
 				const currentConfig = configService.getConfig();
 				if (currentConfig.showStatusBar) {
@@ -135,6 +171,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			const targetDir = path.join(workspaceRoot, targetPath);
 			const success = await gapAnalyzer.importSkill(skill, targetDir);
 			if (success) {
+				analytics.totalImported++;
+				await saveAnalytics(context.globalState, analytics);
 				vscode.window.showInformationMessage(`Skill "${skill.name}" imported to workspace!`);
 				await performScan();
 			}
@@ -142,6 +180,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			const globalDir = resolveGlobalPath(configService.getConfig().globalSkillsPath);
 			const success = await gapAnalyzer.importSkill(skill, globalDir);
 			if (success) {
+				analytics.totalImported++;
+				await saveAnalytics(context.globalState, analytics);
 				vscode.window.showInformationMessage(`Skill "${skill.name}" copied to My Skills!`);
 				await performScan();
 			}
@@ -181,6 +221,42 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	}
 
 	context.subscriptions.push(
+		vscode.commands.registerCommand("open-skills.previewSkill", async (arg: any) => {
+			const skill = extractSkill(arg);
+			if (!skill) {
+				return;
+			}
+
+			try {
+				const uri = vscode.Uri.file(skill.path);
+				const content = await vscode.workspace.fs.readFile(uri);
+				const text = Buffer.from(content).toString("utf-8");
+
+				const panel = vscode.window.createWebviewPanel(
+					"openSkills.skillPreview",
+					`Skill: ${skill.name}`,
+					vscode.ViewColumn.One,
+					{ enableScripts: true }
+				);
+
+				let renderedHtml = `<pre>${escapeHtml(text)}</pre>`;
+				try {
+					const rendered: string = await vscode.commands.executeCommand("markdown.api.render", text);
+					if (rendered) {
+						renderedHtml = rendered;
+					}
+				} catch {
+					// fallback to <pre>
+				}
+
+				panel.webview.html = buildSkillPreviewHtml(skill.name, skill.description, skill.source, renderedHtml);
+			} catch {
+				vscode.window.showErrorMessage(`Failed to open skill: ${skill.name}`);
+			}
+		})
+	);
+
+	context.subscriptions.push(
 		vscode.commands.registerCommand("open-skills.viewSkill", async (arg: any) => {
 			const skill = extractSkill(arg);
 			if (!skill) {
@@ -191,7 +267,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					vscode.Uri.file(skill.path)
 				);
 				await vscode.window.showTextDocument(doc);
-			} catch (e) {
+			} catch {
 				vscode.window.showErrorMessage(`Failed to open skill: ${skill.name}`);
 			}
 		})
@@ -229,6 +305,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				const imported = results.filter(Boolean).length;
 
 				if (imported > 0) {
+					analytics.totalImported += imported;
+					await saveAnalytics(context.globalState, analytics);
 					vscode.window.showInformationMessage(`Successfully imported ${imported} missing skill${imported > 1 ? 's' : ''}!`);
 					await performScan();
 				}
@@ -256,6 +334,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				if (skill) {
 					const success = await gapAnalyzer.deleteSkill(skill);
 					if (success) {
+						analytics.totalDeleted++;
+						await saveAnalytics(context.globalState, analytics);
 						vscode.window.showInformationMessage(
 							`Skill "${skill.name}" deleted successfully.`
 						);
@@ -267,11 +347,130 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	);
 
 	context.subscriptions.push(
+		vscode.commands.registerCommand("open-skills.refreshMarketplace", async () => {
+			await marketplaceProvider.refresh();
+		})
+	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand("open-skills.installMarketplaceSkill", async (arg: any) => {
+			const skill: MarketplaceSkill = arg?.skill || arg;
+			if (!skill) {
+				return;
+			}
+
+			await vscode.window.withProgress({
+				location: vscode.ProgressLocation.Notification,
+				title: `Installing ${skill.name}...`,
+				cancellable: false
+			}, async () => {
+				try {
+					const files = await githubClient.fetchSkillFiles(skill);
+
+					const currentConfig = configService.getConfig();
+					const targetPath = currentConfig.targetImportPath || ".agent/skills";
+
+					const skillDir = vscode.Uri.file(path.join(workspaceRoot, targetPath, skill.name));
+					await vscode.workspace.fs.createDirectory(skillDir);
+
+					for (const file of files) {
+						const fileUri = vscode.Uri.file(path.join(skillDir.fsPath, file.path));
+						const dirUri = vscode.Uri.file(path.dirname(fileUri.fsPath));
+
+						await vscode.workspace.fs.createDirectory(dirUri);
+						await vscode.workspace.fs.writeFile(fileUri, Buffer.from(file.content, 'utf-8'));
+					}
+
+					analytics.totalInstalled++;
+					await saveAnalytics(context.globalState, analytics);
+
+					vscode.window.showInformationMessage(`Successfully installed ${skill.name}!`);
+					await performScan();
+
+					const installedSet = new Set(skills.filter(s => s.status !== "missing").map(s => s.name));
+					marketplaceProvider.setInstalledSkills(installedSet);
+
+				} catch (error) {
+					console.error("Installation failed:", error);
+					vscode.window.showErrorMessage(`Failed to install ${skill.name}`);
+				}
+			});
+		})
+	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand("open-skills.viewMarketplaceSkill", async (arg: any) => {
+			const skill: MarketplaceSkill = arg?.skill || arg;
+			if (!skill) {
+				return;
+			}
+
+			const panel = vscode.window.createWebviewPanel(
+				'marketplaceSkillDetails',
+				`Skill: ${skill.name}`,
+				vscode.ViewColumn.One,
+				{ enableScripts: true }
+			);
+
+			let renderedHtml = `<pre>${escapeHtml(skill.fullContent)}</pre>`;
+			try {
+				const rendered: string = await vscode.commands.executeCommand('markdown.api.render', skill.fullContent);
+				if (rendered) {
+					renderedHtml = rendered;
+				}
+			} catch {
+				// fallback
+			}
+
+			const isInstalled = skills.some(s => s.normalizedName === skill.name.toLowerCase().replace(/\s+/g, "") && s.status !== "missing");
+
+			panel.webview.html = buildMarketplaceSkillViewHtml(skill, renderedHtml, isInstalled);
+
+			panel.webview.onDidReceiveMessage(async (msg) => {
+				if (msg.type === "install") {
+					await vscode.commands.executeCommand("open-skills.installMarketplaceSkill", skill);
+					panel.dispose();
+				}
+			});
+		})
+	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand("open-skills.addCustomRepository", async () => {
+			const owner = await vscode.window.showInputBox({ prompt: "GitHub owner/org name", placeHolder: "e.g. anthropics" });
+			if (!owner) {
+				return;
+			}
+			const repo = await vscode.window.showInputBox({ prompt: "Repository name", placeHolder: "e.g. skills" });
+			if (!repo) {
+				return;
+			}
+			const skillPath = await vscode.window.showInputBox({ prompt: "Path to skills directory", placeHolder: "e.g. skills", value: "skills" });
+			if (!skillPath) {
+				return;
+			}
+			const branch = await vscode.window.showInputBox({ prompt: "Branch name", placeHolder: "main", value: "main" });
+			if (!branch) {
+				return;
+			}
+
+			const wsConfig = vscode.workspace.getConfiguration("open-skills");
+			const repos = wsConfig.get<any[]>("skillRepositories", []);
+			repos.push({ owner, repo, path: skillPath, branch });
+			await wsConfig.update("skillRepositories", repos, vscode.ConfigurationTarget.Global);
+
+			vscode.window.showInformationMessage(`Repository ${owner}/${repo} added. Refreshing marketplace...`);
+			await marketplaceProvider.refresh();
+		})
+	);
+
+	context.subscriptions.push(
 		vscode.commands.registerCommand("open-skills.openGapAnalysis", () => {
 			const activeSkills = skills.filter(s => s.status === "active");
 			const globalSkills = skills.filter(s => s.status === "imported");
 			const gapResult = gapAnalyzer.analyze(activeSkills, globalSkills);
-			GapAnalysisPanel.createOrShow(context, gapResult, importSkill);
+			const marketplaceCount = marketplaceProvider.getSkills().length;
+			GapAnalysisPanel.createOrShow(context, gapResult, importSkill, analytics, marketplaceCount);
 		})
 	);
 
@@ -328,7 +527,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		watcher.onDidChange(debouncedScan);
 		watcher.onDidDelete(debouncedScan);
 		context.subscriptions.push(watcher);
-		context.subscriptions.push(watcher);
 	}
 
 	try {
@@ -338,12 +536,102 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				return;
 			}
 		}
+
+		marketplaceProvider.loadSkills();
+
 		if (config.scanOnStartup) {
 			await performScan();
 		}
 	} catch (error) {
 		console.error("Open Skills failed to initialize properly:", error);
 	}
+}
+
+function escapeHtml(str: string): string {
+	return str
+		.replace(/&/g, "&amp;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;")
+		.replace(/"/g, "&quot;");
+}
+
+function buildSkillPreviewHtml(name: string, description: string, source: string, renderedContent: string): string {
+	return `<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>${escapeHtml(name)}</title>
+	<style>
+		body { font-family: var(--vscode-font-family); padding: 20px; color: var(--vscode-editor-foreground); background: var(--vscode-editor-background); }
+		.header { border-bottom: 1px solid var(--vscode-panel-border); padding-bottom: 16px; margin-bottom: 20px; }
+		h1 { font-size: 22px; margin: 0 0 4px; }
+		.meta { color: var(--vscode-descriptionForeground); font-size: 12px; }
+		a { color: var(--vscode-textLink-foreground); }
+		pre { background: var(--vscode-textCodeBlock-background); padding: 12px; border-radius: 4px; overflow-x: auto; }
+		code { font-family: var(--vscode-editor-font-family); }
+	</style>
+</head>
+<body>
+	<div class="header">
+		<h1>${escapeHtml(name)}</h1>
+		<p class="meta">${escapeHtml(description || "")}</p>
+		<p class="meta">Source: <code>${escapeHtml(source)}</code></p>
+	</div>
+	${renderedContent}
+</body>
+</html>`;
+}
+
+function buildMarketplaceSkillViewHtml(skill: MarketplaceSkill, renderedContent: string, isInstalled: boolean): string {
+	const installButton = isInstalled
+		? `<span style="display:inline-flex;align-items:center;gap:6px;padding:6px 16px;border-radius:4px;font-size:13px;background:var(--vscode-testing-iconPassed);color:var(--vscode-editor-background);font-weight:600;">$(check) Installed</span>`
+		: `<button id="installBtn" style="display:inline-flex;align-items:center;gap:6px;padding:6px 16px;border-radius:4px;font-size:13px;background:var(--vscode-button-background);color:var(--vscode-button-foreground);border:none;cursor:pointer;font-weight:600;">$(cloud-download) Install to Workspace</button>`;
+
+	return `<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>${escapeHtml(skill.name)}</title>
+	<style>
+		body { font-family: var(--vscode-font-family); padding: 20px; color: var(--vscode-editor-foreground); background: var(--vscode-editor-background); }
+		.header { border-bottom: 1px solid var(--vscode-panel-border); padding-bottom: 16px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-start; }
+		.header-left h1 { font-size: 22px; margin: 0 0 6px; }
+		.meta { color: var(--vscode-descriptionForeground); font-size: 12px; margin: 2px 0; }
+		.badge { display:inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
+		a { color: var(--vscode-textLink-foreground); }
+		pre { background: var(--vscode-textCodeBlock-background); padding: 12px; border-radius: 4px; overflow-x: auto; }
+		code { font-family: var(--vscode-editor-font-family); }
+		#installBtn:hover { background: var(--vscode-button-hoverBackground); }
+	</style>
+</head>
+<body>
+	<div class="header">
+		<div class="header-left">
+			<h1>${escapeHtml(skill.name)}</h1>
+			<p class="meta">${escapeHtml(skill.description)}</p>
+			<p class="meta">Source: <code>${escapeHtml(skill.source.owner)}/${escapeHtml(skill.source.repo)}</code></p>
+			${skill.license ? `<p class="meta">License: <span class="badge">${escapeHtml(skill.license)}</span></p>` : ""}
+		</div>
+		<div class="header-right" style="padding-top:4px;">
+			${installButton}
+		</div>
+	</div>
+	${renderedContent}
+	<script>
+		const vscode = acquireVsCodeApi();
+		const btn = document.getElementById('installBtn');
+		if (btn) {
+			btn.addEventListener('click', () => {
+				btn.disabled = true;
+				btn.textContent = 'Installing...';
+				vscode.postMessage({ type: 'install' });
+			});
+		}
+	</script>
+</body>
+</html>`;
 }
 
 export function deactivate(): void { }

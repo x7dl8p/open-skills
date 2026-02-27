@@ -54,6 +54,12 @@
           "id": "openSkillsView",
           "name": "Skills",
           "contextualTitle": "Open Skills"
+        },
+        {
+          "icon": "$(search)",
+          "id": "openSkillsMarketplaceView",
+          "name": "Marketplace",
+          "contextualTitle": "Skills Marketplace"
         }
       ]
     },
@@ -61,6 +67,10 @@
       {
         "view": "openSkillsView",
         "contents": "No skills detected yet.\n\n[Scan Workspace](command:open-skills.rescan)\n\nConfigure additional scan paths in [settings](command:open-skills.openSettings)."
+      },
+      {
+        "view": "openSkillsMarketplaceView",
+        "contents": "Discover and install skills from GitHub.\n\n[Load Marketplace](command:open-skills.refreshMarketplace)"
       }
     ],
     "commands": [
@@ -121,6 +131,35 @@
         "title": "Import All Missing",
         "category": "Open Skills",
         "icon": "$(cloud-download)"
+      },
+      {
+        "command": "open-skills.refreshMarketplace",
+        "title": "Refresh Marketplace",
+        "category": "Open Skills",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "open-skills.installMarketplaceSkill",
+        "title": "Install Skill",
+        "category": "Open Skills",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "open-skills.viewMarketplaceSkill",
+        "title": "View Details",
+        "category": "Open Skills"
+      },
+      {
+        "command": "open-skills.previewSkill",
+        "title": "Preview Skill",
+        "category": "Open Skills",
+        "icon": "$(open-preview)"
+      },
+      {
+        "command": "open-skills.addCustomRepository",
+        "title": "Add Repository",
+        "category": "Open Skills Marketplace",
+        "icon": "$(add)"
       }
     ],
     "menus": {
@@ -128,6 +167,16 @@
         {
           "command": "open-skills.rescan",
           "when": "view == openSkillsView",
+          "group": "navigation"
+        },
+        {
+          "command": "open-skills.refreshMarketplace",
+          "when": "view == openSkillsMarketplaceView",
+          "group": "navigation"
+        },
+        {
+          "command": "open-skills.addCustomRepository",
+          "when": "view == openSkillsMarketplaceView",
           "group": "navigation"
         },
         {
@@ -171,6 +220,11 @@
           "command": "open-skills.viewSkill",
           "when": "view == openSkillsView && viewItem =~ /^skillItem\\./",
           "group": "inline"
+        },
+        {
+          "command": "open-skills.installMarketplaceSkill",
+          "when": "view == openSkillsMarketplaceView && viewItem == 'marketplaceSkill'",
+          "group": "inline"
         }
       ]
     },
@@ -208,6 +262,23 @@
           "type": "boolean",
           "default": true,
           "description": "Automatically scan the workspace when the extension activates.",
+          "scope": "window"
+        },
+        "open-skills.skillRepositories": {
+          "type": "array",
+          "default": [],
+          "description": "GitHub repositories to fetch skills from"
+        },
+        "open-skills.githubToken": {
+          "type": "string",
+          "default": "",
+          "description": "Optional GitHub Personal Access Token to increase API limits.",
+          "scope": "window"
+        },
+        "open-skills.cacheTimeout": {
+          "type": "number",
+          "default": 3600,
+          "description": "Timeout in seconds for caching GitHub marketplace requests.",
           "scope": "window"
         }
       }

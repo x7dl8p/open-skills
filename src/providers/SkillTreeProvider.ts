@@ -48,8 +48,8 @@ export class SkillTreeItem extends vscode.TreeItem {
             this.contextValue = `skillItem.${skill.status}`;
         }
         this.command = {
-            command: "open-skills.viewSkill",
-            title: "View Skill",
+            command: "open-skills.previewSkill",
+            title: "Preview Skill",
             arguments: [skill],
         };
 

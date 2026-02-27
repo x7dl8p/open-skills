@@ -12,10 +12,7 @@ export class SkillHoverProvider implements vscode.HoverProvider {
         document: vscode.TextDocument,
         position: vscode.Position
     ): vscode.Hover | null {
-        const wordRange = document.getWordRangeAtPosition(
-            position,
-            /[a-zA-Z0-9_-]+/
-        );
+        const wordRange = document.getWordRangeAtPosition(position, /[a-zA-Z0-9_-]+/);
         if (!wordRange) {
             return null;
         }
@@ -32,12 +29,12 @@ export class SkillHoverProvider implements vscode.HoverProvider {
         const md = new vscode.MarkdownString(undefined, true);
         md.isTrusted = true;
 
-        const importArgs = encodeURIComponent(JSON.stringify(skill));
+        const encodedSkill = encodeURIComponent(JSON.stringify(skill));
         const importCmd = vscode.Uri.parse(
-            `command:open-skills.importSkillFromHover?${importArgs}`
+            `command:open-skills.importSkillFromHover?${encodedSkill}`
         );
         const viewCmd = vscode.Uri.parse(
-            `command:open-skills.viewSkill?${importArgs}`
+            `command:open-skills.viewSkill?${encodedSkill}`
         );
 
         md.appendMarkdown(`**$(symbol-misc) ${skill.name}**\n\n`);
@@ -72,7 +69,7 @@ export class SkillDecorationProvider {
     constructor() {
         this.decorationType = vscode.window.createTextEditorDecorationType({
             after: {
-                contentText: " ⊕",
+                contentText: " +",
                 color: new vscode.ThemeColor("editorInfo.foreground"),
                 margin: "0 0 0 2px",
                 fontStyle: "normal",
@@ -94,9 +91,7 @@ export class SkillDecorationProvider {
 
             while ((match = regex.exec(text)) !== null) {
                 const startPos = editor.document.positionAt(match.index);
-                const endPos = editor.document.positionAt(
-                    match.index + match[0].length
-                );
+                const endPos = editor.document.positionAt(match.index + match[0].length);
                 decorations.push({ range: new vscode.Range(startPos, endPos) });
             }
         }

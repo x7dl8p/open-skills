@@ -9,7 +9,11 @@ import {
     SKILL_FILE_NAME,
 } from "../types";
 
-import * as os from "os";
+const SOURCE_PATTERNS: ReadonlyArray<{ match: string; source: SkillSource }> = [
+    { match: ".cursor/rules", source: SkillSource.CursorRules },
+    { match: ".cursor/skills", source: SkillSource.CursorSkills },
+    { match: ".agent", source: SkillSource.Agent },
+];
 
 export class SkillScanner {
     private readonly workspaceRoot: string;
@@ -25,17 +29,14 @@ export class SkillScanner {
 
     async scan(): Promise<SkillScanResult> {
         const scanPaths = this.resolveScanPaths();
-        const skills: SkillDefinition[] = [];
 
         const results = await Promise.allSettled(
             scanPaths.map((p) => this.scanDirectory(p))
         );
 
-        for (const result of results) {
-            if (result.status === "fulfilled") {
-                skills.push(...result.value);
-            }
-        }
+        const skills = results.flatMap((r) =>
+            r.status === "fulfilled" ? r.value : []
+        );
 
         this.cachedResult = {
             skills,
@@ -52,43 +53,40 @@ export class SkillScanner {
 
     private resolveScanPaths(): string[] {
         const allPaths = [...DEFAULT_SCAN_PATHS, ...this.customPaths];
-        const wsPaths = allPaths.map((p) => path.join(this.workspaceRoot, p));
-        wsPaths.push(this.globalPath);
-        return wsPaths;
+        const resolved = allPaths.map((p) => path.join(this.workspaceRoot, p));
+        resolved.push(this.globalPath);
+        return resolved;
     }
 
     private async scanDirectory(dirPath: string): Promise<SkillDefinition[]> {
-        const skills: SkillDefinition[] = [];
-
         try {
-            const uri = vscode.Uri.file(dirPath);
-            const entries = await vscode.workspace.fs.readDirectory(uri);
+            const entries = await vscode.workspace.fs.readDirectory(
+                vscode.Uri.file(dirPath)
+            );
 
-            for (const [name, type] of entries) {
+            const promises = entries.map(([name, type]) => {
                 if (type === vscode.FileType.Directory) {
-                    const skillFilePath = path.join(dirPath, name, SKILL_FILE_NAME);
-                    const skill = await this.parseSkillFile(skillFilePath, name, dirPath);
-                    if (skill) {
-                        skills.push(skill);
-                    }
+                    return this.parseSkillFile(
+                        path.join(dirPath, name, SKILL_FILE_NAME),
+                        name,
+                        dirPath
+                    );
                 }
-
                 if (name === SKILL_FILE_NAME && type === vscode.FileType.File) {
-                    const skill = await this.parseSkillFile(
+                    return this.parseSkillFile(
                         path.join(dirPath, name),
                         path.basename(dirPath),
                         dirPath
                     );
-                    if (skill) {
-                        skills.push(skill);
-                    }
                 }
-            }
-        } catch {
-            return skills;
-        }
+                return Promise.resolve(null);
+            });
 
-        return skills;
+            const results = await Promise.all(promises);
+            return results.filter((s): s is SkillDefinition => s !== null);
+        } catch {
+            return [];
+        }
     }
 
     private async parseSkillFile(
@@ -97,12 +95,13 @@ export class SkillScanner {
         basePath: string
     ): Promise<SkillDefinition | null> {
         try {
-            const uri = vscode.Uri.file(filePath);
-            const content = await vscode.workspace.fs.readFile(uri);
+            const content = await vscode.workspace.fs.readFile(
+                vscode.Uri.file(filePath)
+            );
             const text = Buffer.from(content).toString("utf-8");
-
             const source = this.resolveSource(basePath);
             const extractedName = this.extractName(text, skillName);
+
             return {
                 id: this.generateId(filePath),
                 name: extractedName,
@@ -154,35 +153,31 @@ export class SkillScanner {
     }
 
     private extractDependencies(content: string): string[] {
-        const deps: string[] = [];
         const section = content.match(
             /##\s*Dependencies\s*\n([\s\S]*?)(?=\n##|\n$|$)/i
         );
-        if (section) {
-            for (const line of section[1].split("\n")) {
-                const match = line.match(/^[-*]\s+(.+)/);
-                if (match) {
-                    deps.push(match[1].trim());
-                }
-            }
+        if (!section) {
+            return [];
         }
-        return deps;
+        return section[1]
+            .split("\n")
+            .map((line) => line.match(/^[-*]\s+(.+)/))
+            .filter((m): m is RegExpMatchArray => m !== null)
+            .map((m) => m[1].trim());
     }
 
     private resolveSource(basePath: string): SkillSource {
         if (basePath.startsWith(this.globalPath)) {
             return SkillSource.Global;
         }
+
         const relative = basePath.replace(this.workspaceRoot, "");
-        if (relative.includes(".cursor/rules")) {
-            return SkillSource.CursorRules;
+        for (const { match, source } of SOURCE_PATTERNS) {
+            if (relative.includes(match)) {
+                return source;
+            }
         }
-        if (relative.includes(".cursor/skills")) {
-            return SkillSource.CursorSkills;
-        }
-        if (relative.includes(".agent")) {
-            return SkillSource.Agent;
-        }
+
         return SkillSource.Custom;
     }
 }

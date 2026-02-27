@@ -1,25 +1,26 @@
 import * as vscode from "vscode";
 import {
-    EXTENSION_VERSION,
-    GITHUB_URL,
-    DOCS_URL,
-    MARKETPLACE_URL,
+  EXTENSION_VERSION,
+  GITHUB_URL,
+  DEVELOPER,
+  MARKETPLACE_URL,
 } from "../types";
 
 export function showAboutPanel(context: vscode.ExtensionContext): void {
-    const panel = vscode.window.createWebviewPanel(
-        "openSkills.about",
-        "About — Open Skills",
-        vscode.ViewColumn.One,
-        { enableScripts: false }
-    );
+  const panel = vscode.window.createWebviewPanel(
+    "openSkills.about",
+    "About -- Open Skills",
+    vscode.ViewColumn.One,
+    { enableScripts: false }
+  );
 
-    panel.webview.html = buildAboutHtml();
-    context.subscriptions.push(panel);
+  const detectedIde = vscode.env.appName || "Unknown";
+  panel.webview.html = buildAboutHtml(detectedIde);
+  context.subscriptions.push(panel);
 }
 
-function buildAboutHtml(): string {
-    return `<!DOCTYPE html>
+function buildAboutHtml(detectedIde: string): string {
+  return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -31,7 +32,7 @@ function buildAboutHtml(): string {
       font-size: var(--vscode-font-size);
       color: var(--vscode-foreground);
       background: var(--vscode-editor-background);
-      max-width: 640px;
+      max-width: 660px;
       margin: 40px auto;
       padding: 0 24px;
       line-height: 1.6;
@@ -147,14 +148,25 @@ function buildAboutHtml(): string {
       color: var(--vscode-descriptionForeground);
     }
 
-    .coming-soon {
+    .status-badge {
       font-size: 10px;
       padding: 1px 6px;
       border-radius: 8px;
-      background: var(--vscode-badge-background);
-      color: var(--vscode-badge-foreground);
+      background: var(--vscode-testing-iconPassed);
+      color: var(--vscode-editor-background);
       vertical-align: middle;
       margin-left: 6px;
+      font-weight: 600;
+    }
+
+    .ide-badge {
+      display: inline-block;
+      font-size: 11px;
+      padding: 2px 10px;
+      border-radius: 10px;
+      background: var(--vscode-badge-background);
+      color: var(--vscode-badge-foreground);
+      font-weight: 600;
     }
 
     footer {
@@ -169,18 +181,20 @@ function buildAboutHtml(): string {
   <h1>Open Skills <span class="version-badge">v${EXTENSION_VERSION}</span></h1>
   <p class="tagline">Intelligent skill manager for AI-assisted development environments.</p>
 
+  <p>Detected IDE: <span class="ide-badge">${esc(detectedIde)}</span></p>
+
   <hr>
 
   <h2>About</h2>
   <p>
     Open Skills centralizes the discovery, visualization, and synchronization of modular
-    AI skill definitions (<code>SKILL.md</code>) across your project — whether you use
-    VS Code, Cursor, VSCodium, or any compatible fork.
+    AI skill definitions (<code>SKILL.md</code>) across your project -- whether you use
+    VS Code, Cursor, Windsurf, VSCodium, or any compatible fork.
   </p>
   <p>
     It scans standard directories like <code>.agent/skills</code>, <code>.cursor/rules</code>,
-    and custom paths you configure, giving you live status on what's active, what's missing,
-    and one-click import for any gap.
+    <code>.claude/skills</code>, and custom paths you configure, giving you live status on
+    what is active, what is missing, and one-click import for any gap.
   </p>
 
   <hr>
@@ -189,27 +203,35 @@ function buildAboutHtml(): string {
   <div class="feature-grid">
     <div class="feature-item">
       <strong>Workspace Scanning</strong>
-      <span>Non-blocking scan of all configured skill directories</span>
+      <span>Non-blocking scan of 16+ standard skill directories with debounced file watchers</span>
     </div>
     <div class="feature-item">
       <strong>Native Tree View</strong>
-      <span>Active / Missing / Imported groups in the sidebar</span>
+      <span>Active, Missing, and My Skills groups with inline import, delete, and preview actions</span>
     </div>
     <div class="feature-item">
       <strong>Hover Provider</strong>
-      <span>Inline ⊕ markers with import action on hover</span>
+      <span>Inline markers with import and navigation actions when hovering skill names in code</span>
     </div>
     <div class="feature-item">
-      <strong>Gap Analysis</strong>
-      <span>Coverage percentage + one-click import</span>
+      <strong>Dashboard</strong>
+      <span>Coverage percentage, lifetime analytics, and one-click import for missing skills</span>
     </div>
     <div class="feature-item">
       <strong>IDE Detection</strong>
-      <span>Auto-detects VS Code, Cursor, VSCodium and more</span>
+      <span>Auto-detects VS Code, Cursor, Windsurf, VSCodium, Code-OSS, and Insiders</span>
     </div>
     <div class="feature-item">
-      <strong>Marketplace <span class="coming-soon">Soon</span></strong>
-      <span>Community skill discovery and sharing</span>
+      <strong>Marketplace <span class="status-badge">Live</span></strong>
+      <span>Discover and install skills from GitHub repositories with one click</span>
+    </div>
+    <div class="feature-item">
+      <strong>Global Library</strong>
+      <span>Sync skills to a global directory for reuse across all workspaces</span>
+    </div>
+    <div class="feature-item">
+      <strong>Skill Preview</strong>
+      <span>Rendered markdown preview panel for local and marketplace skills</span>
     </div>
   </div>
 
@@ -218,17 +240,17 @@ function buildAboutHtml(): string {
   <h2>Links</h2>
   <div class="links">
     <a class="link-btn primary" href="${GITHUB_URL}" target="_blank">GitHub</a>
-    <a class="link-btn" href="${DOCS_URL}" target="_blank">Documentation</a>
     <a class="link-btn" href="${MARKETPLACE_URL}" target="_blank">Marketplace</a>
     <a class="link-btn" href="${GITHUB_URL}/issues/new" target="_blank">Report Issue</a>
     <a class="link-btn" href="${GITHUB_URL}/blob/main/CHANGELOG.md" target="_blank">Changelog</a>
+    <a class="link-btn" href="${DEVELOPER}" target="_blank">Developer</a>
   </div>
 
   <hr>
 
   <h2>Open Source</h2>
   <p>
-    Open Skills is MIT-licensed. Contributions are welcome — open a PR or file an issue on GitHub.
+    Open Skills is MIT-licensed. Contributions are welcome -- open a PR or file an issue on GitHub.
   </p>
   <ul>
     <li>Star the repo to support the project</li>
@@ -237,8 +259,16 @@ function buildAboutHtml(): string {
   </ul>
 
   <footer>
-    Open Skills v${EXTENSION_VERSION} &mdash; MIT License &mdash; Made with care for the dev community
+    Open Skills v${EXTENSION_VERSION} &mdash; MIT License &mdash; Built for the developer community
   </footer>
 </body>
 </html>`;
+}
+
+function esc(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }

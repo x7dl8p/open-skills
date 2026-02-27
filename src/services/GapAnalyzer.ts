@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import * as path from "path";
-import { SkillDefinition, SkillStatus, GapAnalysisResult, SKILL_FILE_NAME } from "../types";
+import { SkillDefinition, SkillStatus, GapAnalysisResult } from "../types";
 
 export class GapAnalyzer {
     private readonly workspaceRoot: string;
@@ -27,18 +27,14 @@ export class GapAnalyzer {
         }
 
         const totalAvailable = referenceSkills.length;
-        const coveragePercentage =
-            totalAvailable > 0
-                ? Math.round((present.length / totalAvailable) * 100)
-                : 100;
+        const coveragePercentage = totalAvailable > 0
+            ? Math.round((present.length / totalAvailable) * 100)
+            : 100;
 
         return { present, missing, totalAvailable, coveragePercentage };
     }
 
-    async importSkill(
-        skill: SkillDefinition,
-        targetDir: string
-    ): Promise<boolean> {
+    async importSkill(skill: SkillDefinition, targetDir: string): Promise<boolean> {
         try {
             const sourceDir = path.dirname(skill.path);
             const skillFolderName = path.basename(sourceDir);
@@ -52,8 +48,7 @@ export class GapAnalyzer {
 
             return true;
         } catch (error) {
-            const message =
-                error instanceof Error ? error.message : "Unknown error occurred";
+            const message = error instanceof Error ? error.message : "Unknown error occurred";
             vscode.window.showErrorMessage(
                 `Failed to import skill "${skill.name}": ${message}`
             );
@@ -70,8 +65,7 @@ export class GapAnalyzer {
             });
             return true;
         } catch (error) {
-            const message =
-                error instanceof Error ? error.message : "Unknown error occurred";
+            const message = error instanceof Error ? error.message : "Unknown error occurred";
             vscode.window.showErrorMessage(
                 `Failed to delete skill "${skill.name}": ${message}`
             );
@@ -84,6 +78,8 @@ export class GapAnalyzer {
         allSkills: SkillDefinition[]
     ): string[] {
         const available = new Set(allSkills.map((s) => s.normalizedName));
-        return skill.dependencies.filter((dep) => !available.has(dep.toLowerCase().replace(/\s+/g, "")));
+        return skill.dependencies.filter(
+            (dep) => !available.has(dep.toLowerCase().replace(/\s+/g, ""))
+        );
     }
 }

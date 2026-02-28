@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import * as path from "path";
 import {
   EXTENSION_VERSION,
   GITHUB_URL,
@@ -14,12 +15,17 @@ export function showAboutPanel(context: vscode.ExtensionContext): void {
     { enableScripts: false }
   );
 
+  const logoPath = vscode.Uri.file(
+    path.join(context.extensionPath, "assets", "open-skills.png")
+  );
+  const logoUri = panel.webview.asWebviewUri(logoPath);
+
   const detectedIde = vscode.env.appName || "Unknown";
-  panel.webview.html = buildAboutHtml(detectedIde);
+  panel.webview.html = buildAboutHtml(detectedIde, logoUri.toString());
   context.subscriptions.push(panel);
 }
 
-function buildAboutHtml(detectedIde: string): string {
+function buildAboutHtml(detectedIde: string, logoUri: string): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -38,10 +44,23 @@ function buildAboutHtml(detectedIde: string): string {
       line-height: 1.6;
     }
 
+    .header-container {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 8px;
+    }
+
+    .logo {
+      width: 48px;
+      height: 48px;
+      object-fit: contain;
+    }
+
     h1 {
       font-size: 28px;
       font-weight: 600;
-      margin: 0 0 4px;
+      margin: 0;
       color: var(--vscode-foreground);
     }
 
@@ -103,82 +122,85 @@ function buildAboutHtml(detectedIde: string): string {
     .link-btn {
       display: inline-block;
       padding: 6px 14px;
-      border: 1px solid var(--vscode-button-secondaryBackground, var(--vscode-panel-border));
       border-radius: 4px;
-      font-size: 12px;
-      font-weight: 500;
-      color: var(--vscode-foreground);
       text-decoration: none;
-      background: var(--vscode-button-secondaryBackground, transparent);
-      transition: opacity 0.15s;
+      font-size: 13px;
+      font-weight: 500;
+      background: var(--vscode-button-secondaryBackground);
+      color: var(--vscode-button-secondaryForeground);
     }
 
     .link-btn:hover {
-      opacity: 0.8;
+      background: var(--vscode-button-secondaryHoverBackground);
     }
 
     .link-btn.primary {
       background: var(--vscode-button-background);
       color: var(--vscode-button-foreground);
-      border-color: transparent;
+    }
+
+    .link-btn.primary:hover {
+      background: var(--vscode-button-hoverBackground);
+    }
+
+    .ide-badge {
+      background: var(--vscode-badge-background);
+      color: var(--vscode-badge-foreground);
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-weight: 600;
     }
 
     .feature-grid {
       display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
-      margin-bottom: 12px;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+      margin-top: 16px;
     }
 
     .feature-item {
       background: var(--vscode-input-background);
       border: 1px solid var(--vscode-panel-border);
-      border-radius: 6px;
-      padding: 10px 12px;
-      font-size: 12px;
+      padding: 16px;
+      border-radius: 8px;
     }
 
     .feature-item strong {
       display: block;
-      margin-bottom: 2px;
-      font-size: 13px;
+      font-size: 14px;
+      margin-bottom: 4px;
+      color: var(--vscode-foreground);
     }
 
     .feature-item span {
+      font-size: 12px;
       color: var(--vscode-descriptionForeground);
     }
 
     .status-badge {
       font-size: 10px;
-      padding: 1px 6px;
-      border-radius: 8px;
       background: var(--vscode-testing-iconPassed);
-      color: var(--vscode-editor-background);
-      vertical-align: middle;
-      margin-left: 6px;
-      font-weight: 600;
-    }
-
-    .ide-badge {
-      display: inline-block;
-      font-size: 11px;
-      padding: 2px 10px;
+      color: #000;
+      padding: 1px 6px;
       border-radius: 10px;
-      background: var(--vscode-badge-background);
-      color: var(--vscode-badge-foreground);
-      font-weight: 600;
+      vertical-align: middle;
+      margin-left: 4px;
     }
 
     footer {
-      margin-top: 40px;
-      font-size: 11px;
-      color: var(--vscode-disabledForeground);
+      margin-top: 48px;
+      font-size: 12px;
+      color: var(--vscode-descriptionForeground);
       text-align: center;
+      padding-bottom: 24px;
     }
   </style>
 </head>
 <body>
-  <h1>Open Skills <span class="version-badge">v${EXTENSION_VERSION}</span></h1>
+  <div class="header-container">
+    <img src="${logoUri}" alt="Open Skills" class="logo">
+    <h1>Open Skills <span class="version-badge">v${EXTENSION_VERSION}</span></h1>
+  </div>
   <p class="tagline">Intelligent skill manager for AI-assisted development environments.</p>
 
   <p>Detected IDE: <span class="ide-badge">${esc(detectedIde)}</span></p>

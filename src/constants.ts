@@ -56,9 +56,9 @@ export const DEFAULT_SKILL_REPOSITORIES: ReadonlyArray<{
             branch: "main"
         },
         {
-            owner: "pytorch",
-            repo: "pytorch",
-            path: ".claude/skills",
+            owner: "vercel-labs",
+            repo: "agent-skills",
+            path: "skills",
             branch: "main"
         },
         {
@@ -68,9 +68,15 @@ export const DEFAULT_SKILL_REPOSITORIES: ReadonlyArray<{
             branch: "main"
         },
         {
+            owner: "pytorch",
+            repo: "pytorch",
+            path: ".claude/skills",
+            branch: "main"
+        },
+        {
             owner: "microsoftdocs",
             repo: "mcp",
             path: "skills",
             branch: "main"
-        }
+        },
     ];

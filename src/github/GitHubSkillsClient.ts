@@ -81,16 +81,27 @@ export class GitHubSkillsClient {
         }
 
         const tree = await this.fetchRepoTree(repo.owner, repo.repo, repo.branch);
-        const prefix = repo.path + "/";
+        const prefix = repo.path ? (repo.path.endsWith('/') ? repo.path : repo.path + '/') : '';
 
+        // Extract directories containing SKILL.md
         const skillPaths = tree.tree
-            .filter((item) => item.type === "blob" && item.path.startsWith(prefix) && item.path.endsWith("/SKILL.md"))
-            .map((item) => item.path.substring(0, item.path.lastIndexOf("/")));
+            .filter((item) =>
+                item.type === "blob" &&
+                item.path.startsWith(prefix) &&
+                (item.path.endsWith("/SKILL.md") || item.path === "SKILL.md")
+            )
+            .map((item) => {
+                const idx = item.path.lastIndexOf("/");
+                return idx === -1 ? "" : item.path.substring(0, idx);
+            });
+
+        // Dedup paths in case of multiple SKILL.md in hierarchy (rare but possible)
+        const uniquePaths = Array.from(new Set(skillPaths));
 
         const results = await Promise.all(
-            skillPaths.map(async (skillPath) => {
+            uniquePaths.map(async (skillPath) => {
                 try {
-                    const skillName = skillPath.split("/").pop() || skillPath;
+                    const skillName = skillPath.split("/").pop() || repo.repo;
                     return await this.fetchSkillMetadata(repo, skillName, skillPath);
                 } catch {
                     return null;
@@ -127,7 +138,7 @@ export class GitHubSkillsClient {
 
     private async fetchSingleSkill(repo: SkillRepository): Promise<MarketplaceSkill[]> {
         try {
-            const skillName = repo.path.split("/").pop() || repo.path;
+            const skillName = repo.path.split("/").pop() || repo.repo;
             const skill = await this.fetchSkillMetadata(repo, skillName, repo.path);
             return skill ? [skill] : [];
         } catch {
@@ -142,9 +153,25 @@ export class GitHubSkillsClient {
     ): Promise<MarketplaceSkill | null> {
         try {
             const content = await this.fetchRawContent(
-                repo.owner, repo.repo, `${skillPath}/SKILL.md`, repo.branch
+                repo.owner, repo.repo, skillPath ? `${skillPath}/SKILL.md` : "SKILL.md", repo.branch
             );
             const parsed = this.parseSkillMd(content);
+
+            // Robust: Try to enrich from metadata.json (common in Vercel skill structure)
+            if (!parsed.metadata.description) {
+                try {
+                    const metaRaw = await this.fetchRawContent(repo.owner, repo.repo, skillPath ? `${skillPath}/metadata.json` : "metadata.json", repo.branch);
+                    const meta = JSON.parse(metaRaw);
+                    if (meta.abstract) {
+                        parsed.metadata.description = meta.abstract;
+                    }
+                    if (meta.organization && !parsed.metadata.name) {
+                        parsed.metadata.name = `${meta.organization}: ${skillName}`;
+                    }
+                } catch {
+                    // Squelch: metadata.json is optional
+                }
+            }
 
             return {
                 name: parsed.metadata.name || skillName,
@@ -197,19 +224,49 @@ export class GitHubSkillsClient {
     async fetchSkillFiles(skill: MarketplaceSkill): Promise<{ path: string; content: string }[]> {
         const { owner, repo, branch } = skill.source;
         const tree = await this.fetchRepoTree(owner, repo, branch);
-        const prefix = skill.skillPath + "/";
+        const prefix = skill.skillPath ? skill.skillPath + "/" : "";
 
         const skillFiles = tree.tree.filter(
-            (item) => item.type === "blob" && item.path.startsWith(prefix)
+            (item) => item.type === "blob" && (prefix ? item.path.startsWith(prefix) : true)
         );
 
-        return Promise.all(
-            skillFiles.map(async (item) => {
-                const relativePath = item.path.substring(prefix.length);
-                const content = await this.fetchRawContent(owner, repo, item.path, branch);
-                return { path: relativePath, content };
-            })
+        return this.fetchFilesWithPool(
+            skillFiles.map((item) => ({
+                remotePath: item.path,
+                relativePath: prefix ? item.path.substring(prefix.length) : item.path,
+            })),
+            owner, repo, branch
         );
+    }
+
+    private async fetchFilesWithPool(
+        files: { remotePath: string; relativePath: string }[],
+        owner: string,
+        repo: string,
+        branch: string,
+        concurrency = 5,
+        batchDelayMs = 150
+    ): Promise<{ path: string; content: string }[]> {
+        const results: { path: string; content: string }[] = [];
+
+        for (let i = 0; i < files.length; i += concurrency) {
+            const batch = files.slice(i, i + concurrency);
+
+            const batchResults = await Promise.all(
+                batch.map(async ({ remotePath, relativePath }) => {
+                    const content = await this.fetchRawContent(owner, repo, remotePath, branch);
+                    return { path: relativePath, content };
+                })
+            );
+
+            results.push(...batchResults);
+
+            if (i + concurrency < files.length) {
+                await new Promise((resolve) => setTimeout(resolve, batchDelayMs));
+            }
+        }
+
+        return results;
     }
 
     private parseSkillMd(content: string): { metadata: SkillMetadata; body: string } {

@@ -1,18 +1,19 @@
 {
   "name": "open-skills",
   "displayName": "Open Skills",
-  "description": "Intelligent skill manager for AI-assisted development environments — discover, visualize, and sync SKILL.md files across your workspace.",
+  "description": "An skill manager to make N00B AI actually usefull !",
   "version": "0.1.0",
-  "publisher": "open-skills",
+  "publisher": "Mohammad-Ahmad",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/open-skills/open-skills"
+    "url": "https://github.com/x7dl8p/open-skills"
   },
+  "icon": "assets/open-skills.png",
   "bugs": {
-    "url": "https://github.com/open-skills/open-skills/issues"
+    "url": "https://github.com/x7dl8p/open-skills/issues"
   },
-  "homepage": "https://github.com/open-skills/open-skills#readme",
+  "homepage": "https://github.com/x7dl8p/open-skills#readme",
   "keywords": [
     "ai",
     "skills",
@@ -43,20 +44,20 @@
         {
           "id": "openSkills",
           "title": "Open Skills",
-          "icon": "$(symbol-misc)"
+          "icon": "assets/open-skills-outline.svg"
         }
       ]
     },
     "views": {
       "openSkills": [
         {
-          "icon": "./logo.png",
+          "icon": "assets/open-skills-outline.svg",
           "id": "openSkillsView",
           "name": "Skills",
           "contextualTitle": "Open Skills"
         },
         {
-          "icon": "$(search)",
+          "icon": "assets/open-skills-outline.svg",
           "id": "openSkillsMarketplaceView",
           "name": "Marketplace",
           "contextualTitle": "Skills Marketplace"
@@ -186,12 +187,12 @@
         },
         {
           "command": "open-skills.openSettings",
-          "when": "view == openSkillsView",
-          "group": "navigation"
+          "when": "view == openSkillsView || view == openSkillsMarketplaceView",
+          "group": "overflow"
         },
         {
           "command": "open-skills.openAbout",
-          "when": "view == openSkillsView",
+          "when": "view == openSkillsView || view == openSkillsMarketplaceView",
           "group": "overflow"
         },
         {

@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import * as path from "path";
 import { GapAnalysisResult, SkillDefinition, SkillStatus } from "../types";
 
 interface SkillAnalytics {
@@ -70,6 +71,11 @@ export class GapAnalysisPanel {
   private buildHtml(result: GapAnalysisResult, analytics?: SkillAnalytics, marketplaceCount?: number): string {
     const { present, missing, coveragePercentage } = result;
 
+    const logoPath = vscode.Uri.file(
+      path.join(this.context.extensionPath, "assets", "open-skills.png")
+    );
+    const logoUri = this.panel.webview.asWebviewUri(logoPath);
+
     const barColor =
       coveragePercentage >= 75
         ? "var(--vscode-testing-iconPassed)"
@@ -124,27 +130,38 @@ export class GapAnalysisPanel {
       font-size: var(--vscode-font-size);
       color: var(--vscode-foreground);
       background: var(--vscode-editor-background);
-      padding: 24px 32px;
+      padding: 32px 48px;
       max-width: 960px;
       margin: 0 auto;
     }
-    h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
-    .subtitle { color: var(--vscode-descriptionForeground); margin-bottom: 24px; }
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 8px;
+    }
+    .logo {
+      width: 40px;
+      height: 40px;
+      object-fit: contain;
+    }
+    h1 { font-size: 24px; font-weight: 600; margin: 0; }
+    .subtitle { color: var(--vscode-descriptionForeground); margin-bottom: 32px; font-size: 14px; }
     .analytics-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
       gap: 12px;
-      margin-bottom: 28px;
+      margin-bottom: 32px;
     }
     .analytics-card {
       background: var(--vscode-input-background);
       border: 1px solid var(--vscode-panel-border);
-      border-radius: 6px;
-      padding: 14px 16px;
+      border-radius: 8px;
+      padding: 16px 20px;
       text-align: center;
     }
     .analytics-card .value {
-      font-size: 28px;
+      font-size: 32px;
       font-weight: 700;
       display: block;
       margin-bottom: 4px;
@@ -154,170 +171,165 @@ export class GapAnalysisPanel {
       font-size: 11px;
       color: var(--vscode-descriptionForeground);
       text-transform: uppercase;
-      letter-spacing: 0.5px;
+      letter-spacing: 1px;
     }
     .coverage-bar-wrap {
-      margin-bottom: 24px;
+      margin-bottom: 32px;
+      background: var(--vscode-input-background);
+      border: 1px solid var(--vscode-panel-border);
+      padding: 16px;
+      border-radius: 8px;
     }
     .coverage-label {
       display: flex;
       justify-content: space-between;
-      font-size: 12px;
-      margin-bottom: 4px;
-      color: var(--vscode-descriptionForeground);
+      margin-bottom: 12px;
+      font-weight: 600;
+      font-size: 14px;
     }
-    .coverage-bar {
-      height: 8px;
-      background: var(--vscode-input-background);
-      border-radius: 4px;
+    .bar-bg {
+      height: 10px;
+      background: var(--vscode-panel-border);
+      border-radius: 5px;
       overflow: hidden;
     }
-    .coverage-fill {
+    .bar-fill {
       height: 100%;
-      border-radius: 4px;
       background: ${barColor};
-      width: ${coveragePercentage}%;
-      transition: width 0.3s;
+      transition: width 0.6s cubic-bezier(0.23, 1, 0.32, 1);
     }
-    .scan-time {
-      font-size: 11px;
-      color: var(--vscode-descriptionForeground);
-      margin-bottom: 24px;
-    }
-    h2 {
-      font-size: 13px;
-      font-weight: 600;
+    .section-title {
+      font-size: 14px;
+      font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 0.4px;
+      letter-spacing: 0.5px;
       color: var(--vscode-descriptionForeground);
-      margin: 24px 0 10px;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 13px;
-    }
-    th {
-      text-align: left;
-      padding: 6px 10px;
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.3px;
-      color: var(--vscode-descriptionForeground);
+      margin: 32px 0 16px;
       border-bottom: 1px solid var(--vscode-panel-border);
+      padding-bottom: 8px;
     }
-    td {
-      padding: 8px 10px;
-      border-bottom: 1px solid var(--vscode-panel-border);
-      vertical-align: middle;
-    }
-    tr:hover td {
-      background: var(--vscode-list-hoverBackground);
-    }
-    code {
-      font-family: var(--vscode-editor-font-family);
-      font-size: 11px;
-      padding: 1px 5px;
-      background: var(--vscode-textCodeBlock-background);
-      border-radius: 3px;
-    }
-    .badge-ok {
-      display: inline-block;
-      padding: 2px 8px;
-      border-radius: 10px;
-      font-size: 11px;
-      background: var(--vscode-testing-iconPassed);
-      color: var(--vscode-editor-background);
-      font-weight: 600;
-    }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
+    th { text-align: left; padding: 12px 8px; font-size: 12px; color: var(--vscode-descriptionForeground); }
+    td { padding: 14px 8px; border-bottom: 1px solid var(--vscode-panel-border); vertical-align: middle; }
     .vscode-button {
-      padding: 4px 12px;
       background: var(--vscode-button-background);
       color: var(--vscode-button-foreground);
       border: none;
-      border-radius: 3px;
-      font-size: 12px;
+      padding: 6px 14px;
+      border-radius: 4px;
       cursor: pointer;
-      font-family: var(--vscode-font-family);
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 600;
     }
-    .vscode-button:hover {
-      background: var(--vscode-button-hoverBackground);
+    .vscode-button:hover { background: var(--vscode-button-hoverBackground); }
+    .badge-ok {
+      background: var(--vscode-testing-iconPassed);
+      color: #fff;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
     }
-    .empty {
-      text-align: center;
-      padding: 24px;
-      color: var(--vscode-descriptionForeground);
-      font-size: 13px;
+    code {
+      font-family: var(--vscode-editor-font-family);
+      background: var(--vscode-textCodeBlock-background);
+      padding: 2px 4px;
+      border-radius: 3px;
+      font-size: 11px;
     }
   </style>
 </head>
 <body>
-  <h1>Open Skills Dashboard</h1>
-  <p class="subtitle">${present.length} active &nbsp;&middot;&nbsp; ${missing.length} missing &nbsp;&middot;&nbsp; ${result.totalAvailable} total</p>
+  <div class="header">
+    <img src="${logoUri}" alt="Open Skills" class="logo">
+    <h1>Open Skills Dashboard</h1>
+  </div>
+  <p class="subtitle">Unified view of your workspace skills, gaps, and marketplace analytics.</p>
 
   <div class="analytics-grid">
     <div class="analytics-card">
-      <span class="value">${present.length}</span>
-      <span class="label">Active Skills</span>
-    </div>
-    <div class="analytics-card">
-      <span class="value">${missing.length}</span>
-      <span class="label">Missing</span>
+      <span class="value">${mpCount}</span>
+      <span class="label">Available in Marketplace</span>
     </div>
     <div class="analytics-card">
       <span class="value">${installed}</span>
-      <span class="label">Installed (Total)</span>
+      <span class="label">Installed Lifetime</span>
     </div>
     <div class="analytics-card">
       <span class="value">${imported}</span>
-      <span class="label">Imported (Total)</span>
+      <span class="label">Imported Lifetime</span>
     </div>
     <div class="analytics-card">
-      <span class="value">${deleted}</span>
-      <span class="label">Deleted (Total)</span>
-    </div>
-    <div class="analytics-card">
-      <span class="value">${mpCount}</span>
-      <span class="label">Marketplace</span>
+      <span class="value">${present.length}</span>
+      <span class="label">Active in Workspace</span>
     </div>
   </div>
 
   <div class="coverage-bar-wrap">
     <div class="coverage-label">
-      <span>Coverage</span>
+      <span>Workspace Skill Coverage</span>
       <span>${coveragePercentage}%</span>
     </div>
-    <div class="coverage-bar">
-      <div class="coverage-fill"></div>
+    <div class="bar-bg">
+      <div class="bar-fill" style="width: ${coveragePercentage}%"></div>
+    </div>
+    <div style="font-size: 11px; color: var(--vscode-descriptionForeground); margin-top: 12px;">
+      Total Available Skills across all sources: ${present.length + missing.length} | Last Scan: ${lastScan}
     </div>
   </div>
 
-  <p class="scan-time">Last scan: ${lastScan}</p>
-
   ${missing.length > 0
-        ? `<h2>Missing (${missing.length})</h2>
-		<table>
-		  <thead><tr><th>Name</th><th>Source</th><th>Description</th><th></th></tr></thead>
-		  <tbody>${missingRows}</tbody>
-		</table>`
-        : `<div class="empty">All skills are present locally.</div>`
+        ? `
+    <div class="section-title">Missing Skills (${missing.length})</div>
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 15%">Name</th>
+          <th style="width: 25%">Source</th>
+          <th style="width: 45%">Description</th>
+          <th style="width: 15%">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${missingRows}
+      </tbody>
+    </table>
+  `
+        : `
+    <div class="coverage-bar-wrap" style="text-align: center; background: rgba(76, 175, 80, 0.1); border-color: var(--vscode-testing-iconPassed);">
+      <div style="font-size: 16px; font-weight: 600; color: var(--vscode-testing-iconPassed);">
+        $(check) All skills are up to date!
+      </div>
+      <div style="font-size: 13px; color: var(--vscode-foreground); margin-top: 4px;">
+        Your workspace matches the global library and standard definitions.
+      </div>
+    </div>
+  `
       }
 
-  ${present.length > 0
-        ? `<h2>Active (${present.length})</h2>
-		<table>
-		  <thead><tr><th>Name</th><th>Source</th><th>Description</th><th>Status</th></tr></thead>
-		  <tbody>${presentRows}</tbody>
-		</table>`
-        : ""
-      }
+  <div class="section-title">Active Skills (${present.length})</div>
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 15%">Name</th>
+        <th style="width: 25%">Source</th>
+        <th style="width: 45%">Description</th>
+        <th style="width: 15%">Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${presentRows}
+    </tbody>
+  </table>
 
   <script>
     const vscode = acquireVsCodeApi();
-    document.querySelectorAll('.vscode-button[data-skill]').forEach(btn => {
+    document.querySelectorAll('.vscode-button').forEach(btn => {
       btn.addEventListener('click', () => {
         const skill = JSON.parse(btn.getAttribute('data-skill'));
+        btn.disabled = true;
+        btn.textContent = 'Importing...';
         vscode.postMessage({ type: 'import', skill });
       });
     });

@@ -1,11 +1,10 @@
 import * as vscode from "vscode";
 import * as path from "path";
-import * as os from "os";
-import { SkillScanner } from "./services/SkillScanner";
+import { SkillScanner, resolveHomePath } from "./services/SkillScanner";
 import { GapAnalyzer } from "./services/GapAnalyzer";
 import { ConfigService } from "./services/ConfigService";
 import { SkillHoverProvider, SkillDecorationProvider } from "./decorations/SkillHoverProvider";
-import { SkillTreeProvider, SkillTreeItem } from "./providers/SkillTreeProvider";
+import { SkillTreeProvider } from "./providers/SkillTreeProvider";
 import { MarketplaceTreeProvider } from "./providers/MarketplaceTreeProvider";
 import { GitHubSkillsClient } from "./github/GitHubSkillsClient";
 import { runOnboardingWizard } from "./onboarding/OnboardingWizard";
@@ -49,14 +48,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	const configService = new ConfigService(context.globalState);
 	const config = configService.getConfig();
 
-	function resolveGlobalPath(pathStr: string): string {
-		if (pathStr.startsWith("~")) {
-			return path.join(os.homedir(), pathStr.slice(1));
-		}
-		return pathStr;
-	}
-
-	const globalSkillsPath = resolveGlobalPath(config.globalSkillsPath);
+	const globalSkillsPath = resolveHomePath(config.globalSkillsPath);
 
 	const skillScanner = new SkillScanner(workspaceRoot, config.customScanPaths, globalSkillsPath);
 	const gapAnalyzer = new GapAnalyzer(workspaceRoot);
@@ -177,7 +169,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				await performScan();
 			}
 		} else {
-			const globalDir = resolveGlobalPath(configService.getConfig().globalSkillsPath);
+			const globalDir = resolveHomePath(configService.getConfig().globalSkillsPath);
 			const success = await gapAnalyzer.importSkill(skill, globalDir);
 			if (success) {
 				analytics.totalImported++;
@@ -368,17 +360,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					const files = await githubClient.fetchSkillFiles(skill);
 
 					const currentConfig = configService.getConfig();
-					const targetPath = currentConfig.targetImportPath || ".agent/skills";
+					const targetPath = path.normalize(currentConfig.targetImportPath || ".agent/skills");
 
 					const skillDir = vscode.Uri.file(path.join(workspaceRoot, targetPath, skill.name));
 					await vscode.workspace.fs.createDirectory(skillDir);
 
 					for (const file of files) {
-						const fileUri = vscode.Uri.file(path.join(skillDir.fsPath, file.path));
+						const relativeParts = file.path.split("/");
+						const fileUri = vscode.Uri.file(path.join(skillDir.fsPath, ...relativeParts));
 						const dirUri = vscode.Uri.file(path.dirname(fileUri.fsPath));
 
 						await vscode.workspace.fs.createDirectory(dirUri);
-						await vscode.workspace.fs.writeFile(fileUri, Buffer.from(file.content, 'utf-8'));
+						await vscode.workspace.fs.writeFile(fileUri, Buffer.from(file.content, "utf-8"));
 					}
 
 					analytics.totalInstalled++;
@@ -437,19 +430,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	context.subscriptions.push(
 		vscode.commands.registerCommand("open-skills.addCustomRepository", async () => {
-			const owner = await vscode.window.showInputBox({ prompt: "GitHub owner/org name", placeHolder: "e.g. anthropics" });
+			const owner = await vscode.window.showInputBox({
+				prompt: "Enter the GitHub owner or organization name.",
+				placeHolder: "Example: x7dl8p (from github.com/x7dl8p/open-skills)"
+			});
 			if (!owner) {
 				return;
 			}
-			const repo = await vscode.window.showInputBox({ prompt: "Repository name", placeHolder: "e.g. skills" });
+			const repo = await vscode.window.showInputBox({
+				prompt: "Enter the repository name.",
+				placeHolder: "Example: open-skills (from github.com/x7dl8p/open-skills)"
+			});
 			if (!repo) {
 				return;
 			}
-			const skillPath = await vscode.window.showInputBox({ prompt: "Path to skills directory", placeHolder: "e.g. skills", value: "skills" });
+			const skillPath = await vscode.window.showInputBox({
+				prompt: "Relative path to the skills directory within the repository.",
+				placeHolder: "Example: skills or .agent/skills",
+				value: "skills"
+			});
 			if (!skillPath) {
 				return;
 			}
-			const branch = await vscode.window.showInputBox({ prompt: "Branch name", placeHolder: "main", value: "main" });
+			const branch = await vscode.window.showInputBox({
+				prompt: "The branch name to fetch skills from.",
+				placeHolder: "main",
+				value: "main"
+			});
 			if (!branch) {
 				return;
 			}
@@ -585,8 +592,8 @@ function buildSkillPreviewHtml(name: string, description: string, source: string
 
 function buildMarketplaceSkillViewHtml(skill: MarketplaceSkill, renderedContent: string, isInstalled: boolean): string {
 	const installButton = isInstalled
-		? `<span style="display:inline-flex;align-items:center;gap:6px;padding:6px 16px;border-radius:4px;font-size:13px;background:var(--vscode-testing-iconPassed);color:var(--vscode-editor-background);font-weight:600;">$(check) Installed</span>`
-		: `<button id="installBtn" style="display:inline-flex;align-items:center;gap:6px;padding:6px 16px;border-radius:4px;font-size:13px;background:var(--vscode-button-background);color:var(--vscode-button-foreground);border:none;cursor:pointer;font-weight:600;">$(cloud-download) Install to Workspace</button>`;
+		? `<span style="display:inline-flex;align-items:center;gap:6px;padding:6px 16px;border-radius:4px;font-size:13px;background:var(--vscode-testing-iconPassed);color:var(--vscode-editor-background);font-weight:600;">Installed</span>`
+		: `<button id="installBtn" style="display:inline-flex;align-items:center;gap:6px;padding:6px 16px;border-radius:4px;font-size:13px;background:var(--vscode-button-background);color:var(--vscode-button-foreground);border:none;cursor:pointer;font-weight:600;">Install to Workspace</button>`;
 
 	return `<!DOCTYPE html>
 <html lang="en">

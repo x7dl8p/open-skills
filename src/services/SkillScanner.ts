@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import * as path from "path";
+import * as os from "os";
 import {
     SkillDefinition,
     SkillSource,
@@ -10,10 +11,14 @@ import {
 } from "../types";
 
 const SOURCE_PATTERNS: ReadonlyArray<{ match: string; source: SkillSource }> = [
-    { match: ".cursor/rules", source: SkillSource.CursorRules },
-    { match: ".cursor/skills", source: SkillSource.CursorSkills },
-    { match: ".agent", source: SkillSource.Agent },
+    { match: path.join(".cursor", "rules"), source: SkillSource.CursorRules },
+    { match: path.join(".cursor", "skills"), source: SkillSource.CursorSkills },
+    { match: `.agent`, source: SkillSource.Agent },
 ];
+
+function normalizePath(p: string): string {
+    return p.split(path.sep).join("/").toLowerCase();
+}
 
 export class SkillScanner {
     private readonly workspaceRoot: string;
@@ -24,7 +29,7 @@ export class SkillScanner {
     constructor(workspaceRoot: string, customPaths: string[] = [], globalPath: string) {
         this.workspaceRoot = workspaceRoot;
         this.customPaths = customPaths;
-        this.globalPath = globalPath;
+        this.globalPath = path.normalize(globalPath);
     }
 
     async scan(): Promise<SkillScanResult> {
@@ -118,11 +123,8 @@ export class SkillScanner {
     }
 
     private generateId(filePath: string): string {
-        return filePath
-            .replace(this.workspaceRoot, "")
-            .replace(/[/\\]/g, "-")
-            .replace(/^-/, "")
-            .toLowerCase();
+        const rel = path.relative(this.workspaceRoot, filePath);
+        return rel.split(path.sep).join("-").toLowerCase();
     }
 
     private extractName(content: string, fallback: string): string {
@@ -167,17 +169,28 @@ export class SkillScanner {
     }
 
     private resolveSource(basePath: string): SkillSource {
-        if (basePath.startsWith(this.globalPath)) {
+        const normalizedBase = path.normalize(basePath);
+
+        if (normalizePath(normalizedBase).startsWith(normalizePath(this.globalPath))) {
             return SkillSource.Global;
         }
 
-        const relative = basePath.replace(this.workspaceRoot, "");
+        const relative = path.relative(this.workspaceRoot, normalizedBase);
+        const normalizedRelative = normalizePath(relative);
+
         for (const { match, source } of SOURCE_PATTERNS) {
-            if (relative.includes(match)) {
+            if (normalizedRelative.includes(normalizePath(match))) {
                 return source;
             }
         }
 
         return SkillSource.Custom;
     }
+}
+
+export function resolveHomePath(p: string): string {
+    if (p.startsWith("~")) {
+        return path.join(os.homedir(), p.slice(1));
+    }
+    return path.normalize(p);
 }

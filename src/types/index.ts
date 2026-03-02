@@ -20,8 +20,13 @@ export enum SkillSource {
     Agent = ".agent/skills",
     CursorRules = ".cursor/rules",
     CursorSkills = ".cursor/skills",
-    Global = "~/open-skills",
+    Global = "Global Skills",
     Custom = "custom",
+    VSCode = ".github/skills",
+    CodeBuddy = ".codebuddy/skills",
+    Qoder = ".qoder/skills",
+    Trae = ".trae/skills",
+    Windsurf = ".windsurf/skills",
 }
 
 export enum FolderStructure {

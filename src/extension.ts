@@ -50,7 +50,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	const globalSkillsPath = resolveHomePath(config.globalSkillsPath);
 
-	const skillScanner = new SkillScanner(workspaceRoot, config.customScanPaths, globalSkillsPath);
+	const skillScanner = new SkillScanner(
+		workspaceRoot,
+		config.customScanPaths,
+		globalSkillsPath,
+		config.folderStructure
+	);
 	const gapAnalyzer = new GapAnalyzer(workspaceRoot);
 	const treeProvider = new SkillTreeProvider();
 	const hoverProvider = new SkillHoverProvider();
@@ -538,10 +543,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	try {
 		if (!config.onboardingCompleted) {
-			const result = await runOnboardingWizard(configService);
-			if (!result.completed) {
-				return;
-			}
+			await runOnboardingWizard(configService);
 		}
 
 		marketplaceProvider.loadSkills();

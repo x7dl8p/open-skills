@@ -7,6 +7,7 @@ export const DEFAULT_SCAN_PATHS = [
     "skills",
     ".github/copilot-instructions.md",
     ".github/instructions",
+    ".github/skills",
     ".continue/rules",
     ".continue/skills",
     ".amazonq/cli-agents",
@@ -15,6 +16,22 @@ export const DEFAULT_SCAN_PATHS = [
     ".agents/skills",
     "_agent/skills",
     "_agents/skills",
+    ".codebuddy/skills",
+    ".qoder/skills",
+    ".trae/skills",
+    ".windsurf/skills",
+    ".windsurf/rules",
+];
+
+export const DEFAULT_GLOBAL_PATHS = [
+    "~/open-skills",
+    "~/.vscode/skills",
+    "~/.gemini/antigravity/skills",
+    "~/.codebuddy/skills",
+    "~/.cursor/skills",
+    "~/.qoder/skills",
+    "~/.trae/skills",
+    "~/.codeium/windsurf/skills",
 ];
 
 export const SKILL_FILE_NAME = "SKILL.md";
@@ -34,7 +51,10 @@ export const IDE_SIGNATURES: ReadonlyArray<{ pattern: string; label: string }> =
     { pattern: "insiders", label: "VS Code Insiders" },
     { pattern: "code - oss", label: "Code - OSS" },
     { pattern: "code", label: "VS Code" },
-    { pattern: "antigravity", label: "Antigravity" }
+    { pattern: "antigravity", label: "Antigravity" },
+    { pattern: "codebuddy", label: "CodeBuddy" },
+    { pattern: "qoder", label: "Qoder" },
+    { pattern: "trae", label: "Trae" }
 ];
 
 export const DEFAULT_SKILL_REPOSITORIES: ReadonlyArray<{
@@ -78,5 +98,23 @@ export const DEFAULT_SKILL_REPOSITORIES: ReadonlyArray<{
             repo: "mcp",
             path: "skills",
             branch: "main"
+        },
+        {
+            owner: "huggingface",
+            repo: "skills",
+            path: "skills",
+            branch: "main"
+        },
+        {
+            owner: "skillcreatorai",
+            repo: "Ai-Agent-Skills",
+            path: "skills",
+            branch: "main"
+        },
+        {
+            owner: "ComposioHQ",
+            repo: "awesome-claude-skills",
+            path: "",
+            branch: "master"
         },
     ];

@@ -298,8 +298,9 @@ export class GapAnalysisPanel {
   `
         : `
     <div class="coverage-bar-wrap" style="text-align: center; background: rgba(76, 175, 80, 0.1); border-color: var(--vscode-testing-iconPassed);">
-      <div style="font-size: 16px; font-weight: 600; color: var(--vscode-testing-iconPassed);">
-        $(check) All skills are up to date!
+      <div style="font-size: 16px; font-weight: 600; color: var(--vscode-testing-iconPassed); display: flex; align-items: center; justify-content: center; gap: 8px;">
+        <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor"><path d="M13.854 3.646a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 10.293l6.646-6.647a.5.5 0 0 1 .708 0z"/></svg>
+        All skills are up to date!
       </div>
       <div style="font-size: 13px; color: var(--vscode-foreground); margin-top: 4px;">
         Your workspace matches the global library and standard definitions.

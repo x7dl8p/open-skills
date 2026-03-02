@@ -56,6 +56,11 @@ export async function runOnboardingWizard(
         "Skip"
     );
 
+    if (welcome === "Skip") {
+        await configService.setOnboardingCompleted(ideType, FolderStructure.AutoDetect);
+        return { completed: true, ideType, folderStructure: FolderStructure.AutoDetect };
+    }
+
     if (welcome !== "Get Started") {
         return { ...DEFAULT_RESULT, ideType };
     }

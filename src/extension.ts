@@ -5,7 +5,7 @@ import { GapAnalyzer } from "./services/GapAnalyzer";
 import { ConfigService } from "./services/ConfigService";
 import { SkillHoverProvider, SkillDecorationProvider } from "./decorations/SkillHoverProvider";
 import { SkillTreeProvider } from "./providers/SkillTreeProvider";
-import { MarketplaceTreeProvider } from "./providers/MarketplaceTreeProvider";
+import { MarketplaceTreeProvider, resolveGlobalSkillsPath } from "./providers/MarketplaceTreeProvider";
 import { GitHubSkillsClient } from "./github/GitHubSkillsClient";
 import { runOnboardingWizard } from "./onboarding/OnboardingWizard";
 import { showAboutPanel } from "./webviews/AboutPanel";
@@ -48,7 +48,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	const configService = new ConfigService(context.globalState);
 	const config = configService.getConfig();
 
-	const globalSkillsPath = resolveHomePath(config.globalSkillsPath);
+	const globalSkillsPath = resolveGlobalSkillsPath();
 
 	const skillScanner = new SkillScanner(
 		workspaceRoot,
@@ -174,7 +174,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				await performScan();
 			}
 		} else {
-			const globalDir = resolveHomePath(configService.getConfig().globalSkillsPath);
+			const globalDir = resolveGlobalSkillsPath();
 			const success = await gapAnalyzer.importSkill(skill, globalDir);
 			if (success) {
 				analytics.totalImported++;
@@ -546,7 +546,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			await runOnboardingWizard(configService);
 		}
 
-		marketplaceProvider.loadSkills();
+
 
 		if (config.scanOnStartup) {
 			await performScan();

@@ -36,43 +36,10 @@ export class GitHubSkillsClient {
         this.context = context;
     }
 
-    async fetchAllSkills(): Promise<MarketplaceSkill[]> {
+    getRepositories(): SkillRepository[] {
         const config = vscode.workspace.getConfiguration("open-skills");
         const customRepos = config.get<SkillRepository[]>("skillRepositories", []);
-        const repositories = [...DEFAULT_SKILL_REPOSITORIES, ...customRepos];
-
-        const allSkills: MarketplaceSkill[] = [];
-        const errors: string[] = [];
-
-        await vscode.window.withProgress({
-            location: vscode.ProgressLocation.Window,
-            title: "Fetching skills...",
-        }, async (progress) => {
-            const results = await Promise.allSettled(
-                repositories.map(async (repo) => {
-                    progress.report({ message: `${repo.owner}/${repo.repo}` });
-                    return this.fetchSkillsFromRepo(repo);
-                })
-            );
-
-            for (let i = 0; i < results.length; i++) {
-                const result = results[i];
-                if (result.status === "fulfilled") {
-                    allSkills.push(...result.value);
-                } else {
-                    const repo = repositories[i];
-                    errors.push(`${repo.owner}/${repo.repo}: ${result.reason}`);
-                }
-            }
-        });
-
-        if (errors.length > 0 && allSkills.length === 0) {
-            vscode.window.showWarningMessage(
-                `Failed to fetch some skills: ${errors[0]}${errors.length > 1 ? ` (+${errors.length - 1} more)` : ""}`
-            );
-        }
-
-        return allSkills;
+        return [...DEFAULT_SKILL_REPOSITORIES, ...customRepos];
     }
 
     async fetchSkillsFromRepo(repo: SkillRepository): Promise<MarketplaceSkill[]> {
@@ -83,19 +50,23 @@ export class GitHubSkillsClient {
         const tree = await this.fetchRepoTree(repo.owner, repo.repo, repo.branch);
         const prefix = repo.path ? (repo.path.endsWith('/') ? repo.path : repo.path + '/') : '';
 
-        // Extract directories containing SKILL.md
-        const skillPaths = tree.tree
-            .filter((item) =>
-                item.type === "blob" &&
-                item.path.startsWith(prefix) &&
-                (item.path.endsWith("/SKILL.md") || item.path === "SKILL.md")
-            )
-            .map((item) => {
-                const idx = item.path.lastIndexOf("/");
-                return idx === -1 ? "" : item.path.substring(0, idx);
-            });
+        let skillPaths: string[];
 
-        // Dedup paths in case of multiple SKILL.md in hierarchy (rare but possible)
+        if (tree.truncated) {
+            skillPaths = await this.fetchSkillPathsFromContents(repo.owner, repo.repo, repo.branch, repo.path || "");
+        } else {
+            skillPaths = tree.tree
+                .filter((item) =>
+                    item.type === "blob" &&
+                    item.path.startsWith(prefix) &&
+                    (item.path.endsWith("/SKILL.md") || item.path === "SKILL.md")
+                )
+                .map((item) => {
+                    const idx = item.path.lastIndexOf("/");
+                    return idx === -1 ? "" : item.path.substring(0, idx);
+                });
+        }
+
         const uniquePaths = Array.from(new Set(skillPaths));
 
         const results = await Promise.all(
@@ -110,6 +81,38 @@ export class GitHubSkillsClient {
         );
 
         return results.filter((s): s is MarketplaceSkill => s !== null);
+    }
+
+    private async fetchSkillPathsFromContents(
+        owner: string,
+        repo: string,
+        branch: string,
+        basePath: string
+    ): Promise<string[]> {
+        const url = basePath
+            ? `${API_BASE}/repos/${owner}/${repo}/contents/${basePath}?ref=${branch}`
+            : `${API_BASE}/repos/${owner}/${repo}/contents/?ref=${branch}`;
+
+        const response = await this.fetchWithAuth(url);
+        if (!response.ok) {
+            return [];
+        }
+
+        const items = await response.json() as Array<{ name: string; path: string; type: string }>;
+        const skillPaths: string[] = [];
+
+        for (const item of items) {
+            if (item.type === "dir") {
+                const skillFilePath = `${item.path}/SKILL.md`;
+                const testUrl = `${RAW_BASE}/${owner}/${repo}/${branch}/${skillFilePath}`;
+                const testRes = await fetch(testUrl, { method: "HEAD" });
+                if (testRes.ok) {
+                    skillPaths.push(item.path);
+                }
+            }
+        }
+
+        return skillPaths;
     }
 
     private async fetchRepoTree(owner: string, repo: string, branch: string): Promise<GitTreeResponse> {
@@ -157,7 +160,6 @@ export class GitHubSkillsClient {
             );
             const parsed = this.parseSkillMd(content);
 
-            // Robust: Try to enrich from metadata.json (common in Vercel skill structure)
             if (!parsed.metadata.description) {
                 try {
                     const metaRaw = await this.fetchRawContent(repo.owner, repo.repo, skillPath ? `${skillPath}/metadata.json` : "metadata.json", repo.branch);
@@ -169,7 +171,7 @@ export class GitHubSkillsClient {
                         parsed.metadata.name = `${meta.organization}: ${skillName}`;
                     }
                 } catch {
-                    // Squelch: metadata.json is optional
+                    // metadata.json is optional
                 }
             }
 

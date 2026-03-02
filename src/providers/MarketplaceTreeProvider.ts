@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
-import { MarketplaceSkill } from '../types';
+import * as os from 'os';
+import * as path from 'path';
+import { MarketplaceSkill, SkillRepository } from '../types';
 import { GitHubSkillsClient } from '../github/GitHubSkillsClient';
 
 export class MarketplaceSkillTreeItem extends vscode.TreeItem {
@@ -9,7 +11,7 @@ export class MarketplaceSkillTreeItem extends vscode.TreeItem {
     ) {
         super(skill.name, vscode.TreeItemCollapsibleState.None);
 
-        this.description = this.truncateDescription(skill.description, 60);
+        this.description = MarketplaceSkillTreeItem.truncate(skill.description, 60);
         this.tooltip = new vscode.MarkdownString();
         this.tooltip.appendMarkdown(`**${skill.name}**\n\n`);
         this.tooltip.appendMarkdown(`${skill.description}\n\n`);
@@ -17,10 +19,8 @@ export class MarketplaceSkillTreeItem extends vscode.TreeItem {
             this.tooltip.appendMarkdown(`*License: ${skill.license}*\n\n`);
         }
         this.tooltip.appendMarkdown(`Source: \`${skill.source.owner}/${skill.source.repo}\``);
-
         this.iconPath = new vscode.ThemeIcon(isInstalled ? 'check' : 'extensions');
         this.contextValue = isInstalled ? 'marketplaceSkillInstalled' : 'marketplaceSkill';
-
         this.command = {
             command: 'open-skills.viewMarketplaceSkill',
             title: 'View Details',
@@ -28,97 +28,68 @@ export class MarketplaceSkillTreeItem extends vscode.TreeItem {
         };
     }
 
-    private truncateDescription(text: string, maxLength: number): string {
-        if (text.length <= maxLength) {
-            return text;
-        }
-        return text.substring(0, maxLength - 3) + '...';
+    private static truncate(text: string, max: number): string {
+        return text.length <= max ? text : text.substring(0, max - 3) + '...';
     }
 }
 
-export class SourceTreeItem extends vscode.TreeItem {
+export class RepoTreeItem extends vscode.TreeItem {
     constructor(
-        public readonly sourceName: string,
-        public readonly skills: MarketplaceSkill[],
-        collapsed: boolean
+        public readonly repo: SkillRepository,
+        public state: 'idle' | 'loading' | 'loaded' | 'error' = 'idle',
+        public skillCount: number = 0
     ) {
         super(
-            sourceName,
-            collapsed
-                ? vscode.TreeItemCollapsibleState.Collapsed
-                : vscode.TreeItemCollapsibleState.Expanded
+            `${repo.owner}/${repo.repo}`,
+            vscode.TreeItemCollapsibleState.Collapsed
         );
         this.iconPath = new vscode.ThemeIcon('github');
-        this.description = `${skills.length} skill${skills.length !== 1 ? 's' : ''}`;
         this.contextValue = 'marketplaceSource';
+        this.updateDescription();
+    }
+
+    updateDescription(): void {
+        if (this.state === 'loading') {
+            this.description = 'loading...';
+            this.iconPath = new vscode.ThemeIcon('loading~spin');
+        } else if (this.state === 'loaded') {
+            this.description = `${this.skillCount} skill${this.skillCount !== 1 ? 's' : ''}`;
+            this.iconPath = new vscode.ThemeIcon('github');
+        } else if (this.state === 'error') {
+            this.description = 'failed to load';
+            this.iconPath = new vscode.ThemeIcon('error');
+        } else {
+            this.description = this.repo.path || '/';
+            this.iconPath = new vscode.ThemeIcon('github');
+        }
     }
 }
 
-export class MarketplaceTreeProvider implements vscode.TreeDataProvider<MarketplaceSkillTreeItem | SourceTreeItem> {
-    private _onDidChangeTreeData = new vscode.EventEmitter<MarketplaceSkillTreeItem | SourceTreeItem | undefined | null | void>();
+type AnyItem = RepoTreeItem | MarketplaceSkillTreeItem;
+
+export class MarketplaceTreeProvider implements vscode.TreeDataProvider<AnyItem> {
+    private _onDidChangeTreeData = new vscode.EventEmitter<AnyItem | undefined | null | void>();
     readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
-    private skills: MarketplaceSkill[] = [];
+    private repos: SkillRepository[] = [];
+    private repoItems: RepoTreeItem[] = [];
+    private skillCache: Map<string, MarketplaceSkill[]> = new Map();
     private searchQuery: string = '';
     private installedSkillNames: Set<string> = new Set();
-    private isLoading: boolean = false;
-    private groupBySource: boolean = true;
 
     constructor(
         private readonly githubClient: GitHubSkillsClient,
         private readonly context: vscode.ExtensionContext
-    ) { }
+    ) {
+        this.repos = this.githubClient.getRepositories();
+        this.repoItems = this.repos.map(r => new RepoTreeItem(r));
+    }
 
-    async refresh(): Promise<void> {
-        this.isLoading = true;
+    refresh(): void {
+        this.skillCache.clear();
+        this.githubClient.clearCache();
+        this.repoItems = this.repos.map(r => new RepoTreeItem(r));
         this._onDidChangeTreeData.fire();
-
-        try {
-            this.githubClient.clearCache();
-            this.skills = await this.githubClient.fetchAllSkills();
-        } catch (error) {
-            console.error('Failed to refresh marketplace:', error);
-            vscode.window.showErrorMessage('Failed to refresh marketplace. Please check your network connection.');
-        } finally {
-            this.isLoading = false;
-            this._onDidChangeTreeData.fire();
-        }
-    }
-
-    async loadSkills(): Promise<void> {
-        if (this.skills.length === 0 && !this.isLoading) {
-            this.isLoading = true;
-            this._onDidChangeTreeData.fire();
-
-            try {
-                this.skills = await this.githubClient.fetchAllSkills();
-            } catch (error) {
-                console.error('Failed to load skills:', error);
-            } finally {
-                this.isLoading = false;
-                this._onDidChangeTreeData.fire();
-            }
-        }
-    }
-
-    setSearchQuery(query: string): void {
-        this.searchQuery = query.toLowerCase();
-        this._onDidChangeTreeData.fire();
-        this.updateSearchContext();
-    }
-
-    clearSearch(): void {
-        this.searchQuery = '';
-        this._onDidChangeTreeData.fire();
-        this.updateSearchContext();
-    }
-
-    isSearchActive(): boolean {
-        return this.searchQuery.length > 0;
-    }
-
-    private updateSearchContext(): void {
-        vscode.commands.executeCommand('setContext', 'openSkills:searchActive', this.isSearchActive());
     }
 
     setInstalledSkills(names: Set<string>): void {
@@ -126,99 +97,123 @@ export class MarketplaceTreeProvider implements vscode.TreeDataProvider<Marketpl
         this._onDidChangeTreeData.fire();
     }
 
+    setSearchQuery(query: string): void {
+        this.searchQuery = query.toLowerCase();
+        this._onDidChangeTreeData.fire();
+        vscode.commands.executeCommand('setContext', 'openSkills:searchActive', query.length > 0);
+    }
+
+    clearSearch(): void {
+        this.setSearchQuery('');
+    }
+
+    isSearchActive(): boolean {
+        return this.searchQuery.length > 0;
+    }
+
     getSkills(): MarketplaceSkill[] {
-        return this.skills;
+        const all: MarketplaceSkill[] = [];
+        for (const skills of this.skillCache.values()) {
+            all.push(...skills);
+        }
+        return all;
     }
 
     getSkillByName(name: string): MarketplaceSkill | undefined {
-        return this.skills.find(s => s.name === name);
+        for (const skills of this.skillCache.values()) {
+            const found = skills.find(s => s.name === name);
+            if (found) { return found; }
+        }
+        return undefined;
     }
 
-    getTreeItem(element: MarketplaceSkillTreeItem | SourceTreeItem): vscode.TreeItem {
+    getTreeItem(element: AnyItem): vscode.TreeItem {
         return element;
     }
 
-    getChildren(element?: MarketplaceSkillTreeItem | SourceTreeItem): vscode.ProviderResult<(MarketplaceSkillTreeItem | SourceTreeItem)[]> {
-        if (this.isLoading) {
-            return [this.createLoadingItem()];
-        }
-
+    async getChildren(element?: AnyItem): Promise<AnyItem[]> {
         if (!element) {
-            const filteredSkills = this.getFilteredSkills();
-
-            if (filteredSkills.length === 0 && this.skills.length === 0) {
-                return [this.createEmptyItem()];
+            if (this.repoItems.length === 0) {
+                const empty = new vscode.TreeItem('No repositories configured', vscode.TreeItemCollapsibleState.None);
+                empty.iconPath = new vscode.ThemeIcon('info');
+                return [empty as unknown as AnyItem];
             }
 
-            if (filteredSkills.length === 0 && this.searchQuery) {
-                return [this.createNoResultsItem()];
+            if (this.searchQuery) {
+                return this.getSearchResults();
             }
 
-            if (this.groupBySource) {
-                return this.getSourceGroups(filteredSkills);
-            } else {
-                return filteredSkills.map(skill =>
-                    new MarketplaceSkillTreeItem(skill, this.installedSkillNames.has(skill.name))
-                );
-            }
+            return this.repoItems;
         }
 
-        if (element instanceof SourceTreeItem) {
-            return element.skills.map(skill =>
-                new MarketplaceSkillTreeItem(skill, this.installedSkillNames.has(skill.name))
-            );
+        if (element instanceof RepoTreeItem) {
+            return this.getSkillsForRepo(element);
         }
 
         return [];
     }
 
-    private getFilteredSkills(): MarketplaceSkill[] {
-        if (!this.searchQuery) {
-            return this.skills;
+    private async getSkillsForRepo(repoItem: RepoTreeItem): Promise<AnyItem[]> {
+        const cacheKey = `${repoItem.repo.owner}/${repoItem.repo.repo}@${repoItem.repo.path}`;
+
+        if (this.skillCache.has(cacheKey)) {
+            const cached = this.skillCache.get(cacheKey)!;
+            return this.skillsToItems(cached);
         }
 
-        return this.skills.filter(skill =>
-            skill.name.toLowerCase().includes(this.searchQuery) ||
-            skill.description.toLowerCase().includes(this.searchQuery)
+        repoItem.state = 'loading';
+        repoItem.updateDescription();
+        this._onDidChangeTreeData.fire(repoItem);
+
+        try {
+            const skills = await this.githubClient.fetchSkillsFromRepo(repoItem.repo);
+            this.skillCache.set(cacheKey, skills);
+            repoItem.state = 'loaded';
+            repoItem.skillCount = skills.length;
+            repoItem.updateDescription();
+            this._onDidChangeTreeData.fire(repoItem);
+            return this.skillsToItems(skills);
+        } catch {
+            repoItem.state = 'error';
+            repoItem.updateDescription();
+            this._onDidChangeTreeData.fire(repoItem);
+
+            const errItem = new vscode.TreeItem('Failed to load. Check network or token.');
+            errItem.iconPath = new vscode.ThemeIcon('warning');
+            return [errItem as unknown as AnyItem];
+        }
+    }
+
+    private skillsToItems(skills: MarketplaceSkill[]): MarketplaceSkillTreeItem[] {
+        const filtered = this.searchQuery
+            ? skills.filter(s =>
+                s.name.toLowerCase().includes(this.searchQuery) ||
+                s.description.toLowerCase().includes(this.searchQuery)
+            )
+            : skills;
+
+        return filtered.map(s => new MarketplaceSkillTreeItem(s, this.installedSkillNames.has(s.name)));
+    }
+
+    private getSearchResults(): AnyItem[] {
+        const all = this.getSkills();
+        const filtered = all.filter(s =>
+            s.name.toLowerCase().includes(this.searchQuery) ||
+            s.description.toLowerCase().includes(this.searchQuery)
         );
-    }
 
-    private getSourceGroups(skills: MarketplaceSkill[]): SourceTreeItem[] {
-        const groups = new Map<string, MarketplaceSkill[]>();
-
-        for (const skill of skills) {
-            const key = `${skill.source.owner}/${skill.source.repo}`;
-            if (!groups.has(key)) {
-                groups.set(key, []);
-            }
-            groups.get(key)!.push(skill);
+        if (filtered.length === 0) {
+            const noRes = new vscode.TreeItem(`No results for "${this.searchQuery}"`, vscode.TreeItemCollapsibleState.None);
+            noRes.iconPath = new vscode.ThemeIcon('search-stop');
+            return [noRes as unknown as AnyItem];
         }
 
-        let isFirst = true;
-        const items: SourceTreeItem[] = [];
-        for (const [name, skillList] of groups.entries()) {
-            items.push(new SourceTreeItem(name, skillList, !isFirst));
-            isFirst = false;
-        }
-        return items;
-    }
-
-    private createLoadingItem(): MarketplaceSkillTreeItem {
-        const item = new vscode.TreeItem('Loading skills...', vscode.TreeItemCollapsibleState.None);
-        item.iconPath = new vscode.ThemeIcon('loading~spin');
-        return item as unknown as MarketplaceSkillTreeItem;
-    }
-
-    private createEmptyItem(): MarketplaceSkillTreeItem {
-        const item = new vscode.TreeItem('No skills available', vscode.TreeItemCollapsibleState.None);
-        item.iconPath = new vscode.ThemeIcon('info');
-        item.description = 'Click refresh to load skills';
-        return item as unknown as MarketplaceSkillTreeItem;
-    }
-
-    private createNoResultsItem(): MarketplaceSkillTreeItem {
-        const item = new vscode.TreeItem(`No results for "${this.searchQuery}"`, vscode.TreeItemCollapsibleState.None);
-        item.iconPath = new vscode.ThemeIcon('search-stop');
-        return item as unknown as MarketplaceSkillTreeItem;
+        return filtered.map(s => new MarketplaceSkillTreeItem(s, this.installedSkillNames.has(s.name)));
     }
 }
+
+export function resolveGlobalSkillsPath(): string {
+    return path.join(os.homedir(), '.open-skills');
+}
+
+export type { AnyItem as MarketplaceTreeItem };

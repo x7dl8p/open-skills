@@ -26,7 +26,7 @@ export class MarketplaceSkillTreeItem extends vscode.TreeItem {
         super(node.name, vscode.TreeItemCollapsibleState.None);
         this.skill = { name: node.name, description: '', source: node.source, skillPath: node.skillPath };
         this.tooltip = `${node.source.owner}/${node.source.repo}: ${node.skillPath}`;
-        this.iconPath = new vscode.ThemeIcon(isInstalled ? 'check' : 'extensions');
+        this.iconPath = new vscode.ThemeIcon('extensions');
         this.contextValue = isInstalled ? 'marketplaceSkillInstalled' : 'marketplaceSkill';
         this.command = {
             command: 'open-skills.viewMarketplaceSkill',

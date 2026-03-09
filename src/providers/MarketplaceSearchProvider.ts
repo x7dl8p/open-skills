@@ -18,8 +18,8 @@ export class MarketplaceSearchProvider implements vscode.WebviewViewProvider {
         webviewView.webview.options = { enableScripts: true, localResourceRoots: [this.extensionUri] };
         webviewView.webview.html = this.html();
         webviewView.webview.onDidReceiveMessage(({ type, query, index }: { type: string; query: string; index: number }) => {
-            if (type === 'search') this.onSearch(query);
-            if (type === 'open' && this.lastResults[index]) this.onOpen(this.lastResults[index].skill);
+            if (type === 'search') { this.onSearch(query); }
+            if (type === 'open' && this.lastResults[index]) { this.onOpen(this.lastResults[index].skill); }
         });
     }
 
@@ -99,14 +99,17 @@ window.addEventListener('message',({data})=>{
   if(data.type==='clear'){inp.value='';clr.classList.remove('on');list.innerHTML='';}
   if(data.type==='results')render(data.items);
 });
-function open(i){vsc.postMessage({type:'open',index:i});}
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function render(items){
   if(!items.length){list.innerHTML=inp.value?'<div class="empty">No results found</div>':'';return;}
   list.innerHTML=items.map(({i,name,cat,ok})=>
-    \`<div class="item" onclick="open(\${i})"><span class="iico \${ok?'ok':'no'}">\${ok?ICO_CHK:ICO_EXT}</span><span class="iname">\${esc(name)}</span><span class="icat">\${esc(cat)}</span></div>\`
+    \`<div class="item" data-index="\${i}"><span class="iico \${ok?'ok':'no'}">\${ok?ICO_CHK:ICO_EXT}</span><span class="iname">\${esc(name)}</span><span class="icat">\${esc(cat)}</span></div>\`
   ).join('');
 }
+list.addEventListener('click',e=>{
+  const el=e.target.closest('[data-index]');
+  if(el){vsc.postMessage({type:'open',index:parseInt(el.dataset.index,10)});}
+});
 </script>
 </body>
 </html>`;

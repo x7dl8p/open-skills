@@ -11,6 +11,7 @@ import { GitHubSkillsClient } from "./github/GitHubSkillsClient";
 import { runOnboardingWizard } from "./onboarding/OnboardingWizard";
 import { showAboutPanel } from "./webviews/AboutPanel";
 import { GapAnalysisPanel } from "./webviews/GapAnalysisPanel";
+import { SkillViewPanel } from "./webviews/SkillViewPanel";
 import { SkillDefinition, MarketplaceSkill } from "./types";
 
 import { DEFAULT_SCAN_PATHS } from "./constants";
@@ -210,28 +211,44 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		})
 	);
 
+	/** 
+	 * Extracts a SkillDefinition from various argument shapes:
+	 * - TreeItem inline button: passes the TreeItem which has a `.skill` property
+	 * - Direct SkillDefinition object with `.path`
+	 * - Array of SkillDefinition objects
+	 */
 	function extractSkill(arg: unknown): SkillDefinition | undefined {
+		if (!arg || typeof arg !== "object") { return undefined; }
+
 		let candidate: any = undefined;
-		if (typeof arg === "object" && arg !== null) {
-			if ("skill" in arg && typeof (arg as any).skill?.path === "string") {
-				candidate = (arg as any).skill;
-			} else if ("path" in arg && typeof (arg as any).path === "string") {
-				candidate = arg;
-			} else if (Array.isArray(arg) && arg[0] && typeof arg[0].path === "string") {
-				candidate = arg[0];
-			}
+		const obj = arg as any;
+
+		// TreeItem from inline button – has .skill property with .path
+		if (obj.skill && typeof obj.skill === "object" && typeof obj.skill.path === "string") {
+			candidate = obj.skill;
+		}
+		// Direct SkillDefinition – has .path and .name
+		else if (typeof obj.path === "string" && typeof obj.name === "string") {
+			candidate = obj;
+		}
+		// Array – take first
+		else if (Array.isArray(arg) && arg[0] && typeof arg[0].path === "string") {
+			candidate = arg[0];
 		}
 
-		if (candidate && typeof candidate.path === "string") {
-			const testPath = candidate.path;
-			const relWorkspace = path.relative(workspaceRoot, testPath);
-			const relGlobal = path.relative(globalSkillsPath, testPath);
-			const isWorkspace = !relWorkspace.startsWith("..") && !path.isAbsolute(relWorkspace);
-			const isGlobal = !relGlobal.startsWith("..") && !path.isAbsolute(relGlobal);
+		if (!candidate || typeof candidate.path !== "string") {
+			return undefined;
+		}
 
-			if (isWorkspace || isGlobal) {
-				return candidate as SkillDefinition;
-			}
+		// Validate the path is under workspace or global skills directory
+		const testPath = candidate.path;
+		const relWorkspace = path.relative(workspaceRoot, testPath);
+		const relGlobal = path.relative(globalSkillsPath, testPath);
+		const isWorkspace = !relWorkspace.startsWith("..") && !path.isAbsolute(relWorkspace);
+		const isGlobal = !relGlobal.startsWith("..") && !path.isAbsolute(relGlobal);
+
+		if (isWorkspace || isGlobal) {
+			return candidate as SkillDefinition;
 		}
 		return undefined;
 	}
@@ -393,35 +410,40 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	context.subscriptions.push(
 		vscode.commands.registerCommand("open-skills.viewMarketplaceSkill", async (arg: any) => {
-			let skill: MarketplaceSkill = arg?.skill || arg;
-			if (!skill) { return; }
+			try {
+				let skill: MarketplaceSkill = arg?.skill || arg;
+				if (!skill?.name) { return; }
 
-			if (!skill.fullContent) {
-				await vscode.window.withProgress({
-					location: vscode.ProgressLocation.Notification,
-					title: `Loading ${skill.name}...`,
-					cancellable: false
-				}, async () => {
-					const full = await githubClient.fetchSkillMetadata(skill.source, skill.name, skill.skillPath);
-					if (full) { skill = full; }
-				});
-			}
-
-			const doc = await vscode.workspace.openTextDocument({
-				content: skill.fullContent || `# ${skill.name}\n\n${skill.description}`,
-				language: 'markdown',
-			});
-			await vscode.commands.executeCommand('markdown.showPreview', doc.uri);
-
-			const isInstalled = skills.some(s => s.normalizedName === skill.name.toLowerCase().replace(/\s+/g, "") && s.status !== "missing");
-			if (!isInstalled) {
-				const action = await vscode.window.showInformationMessage(
-					`Install "${skill.name}" to workspace?`,
-					'Install'
-				);
-				if (action === 'Install') {
-					await vscode.commands.executeCommand('open-skills.installMarketplaceSkill', skill);
+				if (!skill.fullContent) {
+					await vscode.window.withProgress({
+						location: vscode.ProgressLocation.Notification,
+						title: `Loading ${skill.name}...`,
+						cancellable: false
+					}, async () => {
+						const full = await githubClient.fetchSkillMetadata(skill.source, skill.name, skill.skillPath);
+						if (full) { skill = full; }
+					});
 				}
+
+				const isInstalled = skills.some(s =>
+					s.normalizedName === skill.name.toLowerCase().replace(/\s+/g, "") && s.status !== "missing"
+				);
+
+				const instance = SkillViewPanel.createOrShow(
+					context,
+					skill,
+					isInstalled,
+					async (s) => {
+						try {
+							await vscode.commands.executeCommand('open-skills.installMarketplaceSkill', s);
+							instance.markInstalled();
+						} catch {
+							vscode.window.showErrorMessage(`Failed to install ${s.name}`);
+						}
+					},
+				);
+			} catch (err) {
+				vscode.window.showErrorMessage(`Failed to open skill: ${err instanceof Error ? err.message : String(err)}`);
 			}
 		})
 	);
@@ -471,11 +493,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	context.subscriptions.push(
 		vscode.commands.registerCommand("open-skills.openGapAnalysis", () => {
-			const activeSkills = skills.filter(s => s.status === "active");
-			const globalSkills = skills.filter(s => s.status === "imported");
-			const gapResult = gapAnalyzer.analyze(activeSkills, globalSkills);
-			const marketplaceCount = marketplaceProvider.getSkills().length;
-			GapAnalysisPanel.createOrShow(context, gapResult, importSkill, analytics, marketplaceCount);
+			const computeResult = () => {
+				const activeSkills = skills.filter(s => s.status === "active");
+				const globalSkills = skills.filter(s => s.status === "imported");
+				return {
+					result: gapAnalyzer.analyze(activeSkills, globalSkills),
+					marketplaceCount: marketplaceProvider.getSkills().length,
+				};
+			};
+
+			const { result, marketplaceCount } = computeResult();
+			GapAnalysisPanel.createOrShow(
+				context,
+				result,
+				importSkill,
+				analytics,
+				marketplaceCount,
+				() => {
+					const refreshed = computeResult();
+					GapAnalysisPanel.currentPanel?.update(refreshed.result, analytics, refreshed.marketplaceCount);
+				},
+			);
 		})
 	);
 

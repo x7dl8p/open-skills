@@ -88,11 +88,38 @@ export class MarketplaceTreeProvider implements vscode.TreeDataProvider<AnyItem>
         this.repoItems = this.repos.map(r => new RepoTreeItem(r));
     }
 
+    /** Fire-and-forget: fetch every repo in the background so search works immediately. */
+    prefetchAll(): void {
+        for (const repoItem of this.repoItems) {
+            const cacheKey = `${repoItem.repo.owner}/${repoItem.repo.repo}@${repoItem.repo.branch}`;
+            if (this.treeCache.has(cacheKey)) { continue; }
+
+            repoItem.state = 'loading';
+            repoItem.updateDescription();
+            this._onDidChangeTreeData.fire(repoItem);
+
+            this.githubClient.fetchSkillTreeFromRepo(repoItem.repo)
+                .then(categories => {
+                    this.treeCache.set(cacheKey, categories);
+                    repoItem.state = 'loaded';
+                    repoItem.skillCount = categories.reduce((sum, c) => sum + c.skills.length, 0);
+                    repoItem.updateDescription();
+                    this._onDidChangeTreeData.fire(repoItem);
+                })
+                .catch(() => {
+                    repoItem.state = 'error';
+                    repoItem.updateDescription();
+                    this._onDidChangeTreeData.fire(repoItem);
+                });
+        }
+    }
+
     refresh(): void {
         this.treeCache.clear();
         this.githubClient.clearCache();
         this.repoItems = this.repos.map(r => new RepoTreeItem(r));
         this._onDidChangeTreeData.fire();
+        this.prefetchAll();
     }
 
     setInstalledSkills(names: Set<string>): void {
@@ -112,6 +139,10 @@ export class MarketplaceTreeProvider implements vscode.TreeDataProvider<AnyItem>
 
     isSearchActive(): boolean {
         return this.searchQuery.length > 0;
+    }
+
+    currentSearch(): string {
+        return this.searchQuery;
     }
 
     getSkills(): MarketplaceSkill[] {

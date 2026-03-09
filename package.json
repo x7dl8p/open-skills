@@ -68,10 +68,6 @@
       {
         "view": "openSkillsView",
         "contents": "No skills detected yet.\n\n[Scan Workspace](command:open-skills.rescan)\n\nConfigure additional scan paths in [settings](command:open-skills.openSettings)."
-      },
-      {
-        "view": "openSkillsMarketplaceView",
-        "contents": "Discover and install skills from GitHub.\n\n[Load Marketplace](command:open-skills.refreshMarketplace)"
       }
     ],
     "commands": [
@@ -140,6 +136,18 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "open-skills.searchMarketplace",
+        "title": "Search Skills",
+        "category": "Open Skills Marketplace",
+        "icon": "$(search)"
+      },
+      {
+        "command": "open-skills.clearMarketplaceSearch",
+        "title": "Clear Search",
+        "category": "Open Skills Marketplace",
+        "icon": "$(search-stop)"
+      },
+      {
         "command": "open-skills.installMarketplaceSkill",
         "title": "Install Skill",
         "category": "Open Skills",
@@ -173,6 +181,16 @@
         {
           "command": "open-skills.refreshMarketplace",
           "when": "view == openSkillsMarketplaceView",
+          "group": "navigation"
+        },
+        {
+          "command": "open-skills.searchMarketplace",
+          "when": "view == openSkillsMarketplaceView && !openSkills:searchActive",
+          "group": "navigation"
+        },
+        {
+          "command": "open-skills.clearMarketplaceSearch",
+          "when": "view == openSkillsMarketplaceView && openSkills:searchActive",
           "group": "navigation"
         },
         {
@@ -220,11 +238,6 @@
         {
           "command": "open-skills.viewSkill",
           "when": "view == openSkillsView && viewItem =~ /^skillItem\\./",
-          "group": "inline"
-        },
-        {
-          "command": "open-skills.installMarketplaceSkill",
-          "when": "view == openSkillsMarketplaceView && viewItem == 'marketplaceSkill'",
           "group": "inline"
         }
       ]
@@ -341,15 +354,18 @@
     "test": "vscode-test"
   },
   "devDependencies": {
-    "@types/vscode": "^1.90.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "22.x",
-    "typescript-eslint": "^8.54.0",
-    "eslint": "^9.39.2",
+    "@types/vscode": "^1.90.0",
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.5.2",
     "esbuild": "^0.27.2",
+    "eslint": "^9.39.2",
     "npm-run-all": "^4.1.5",
     "typescript": "^5.9.3",
-    "@vscode/test-cli": "^0.0.12",
-    "@vscode/test-electron": "^2.5.2"
+    "typescript-eslint": "^8.54.0"
+  },
+  "dependencies": {
+    "@vscode/codicons": "^0.0.44"
   }
 }

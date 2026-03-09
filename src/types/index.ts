@@ -75,6 +75,17 @@ export interface SkillMetadata {
     allowedTools?: string;
 }
 
+export interface SkillNode {
+    name: string;
+    skillPath: string;
+    source: SkillRepository;
+}
+
+export interface CategoryNode {
+    name: string;
+    skills: SkillNode[];
+}
+
 export interface MarketplaceSkill {
     name: string;
     description: string;
@@ -82,8 +93,8 @@ export interface MarketplaceSkill {
     compatibility?: string;
     source: SkillRepository;
     skillPath: string;
-    fullContent: string;
-    bodyContent: string;
+    fullContent?: string;
+    bodyContent?: string;
 }
 
 export interface CacheEntry<T> {

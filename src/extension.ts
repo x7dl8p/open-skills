@@ -6,10 +6,12 @@ import { ConfigService } from "./services/ConfigService";
 import { SkillHoverProvider, SkillDecorationProvider } from "./decorations/SkillHoverProvider";
 import { SkillTreeProvider } from "./providers/SkillTreeProvider";
 import { MarketplaceTreeProvider, resolveGlobalSkillsPath } from "./providers/MarketplaceTreeProvider";
+import { MarketplaceSearchProvider } from "./providers/MarketplaceSearchProvider";
 import { GitHubSkillsClient } from "./github/GitHubSkillsClient";
 import { runOnboardingWizard } from "./onboarding/OnboardingWizard";
 import { showAboutPanel } from "./webviews/AboutPanel";
 import { GapAnalysisPanel } from "./webviews/GapAnalysisPanel";
+import { SkillViewPanel } from "./webviews/SkillViewPanel";
 import { SkillDefinition, MarketplaceSkill } from "./types";
 
 import { DEFAULT_SCAN_PATHS } from "./constants";
@@ -63,7 +65,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	const githubClient = new GitHubSkillsClient(context);
 	const marketplaceProvider = new MarketplaceTreeProvider(githubClient, context);
-
 	const analytics = loadAnalytics(context.globalState);
 
 	const statusBarItem = vscode.window.createStatusBarItem(
@@ -79,7 +80,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	}
 
 	vscode.window.registerTreeDataProvider("openSkillsView", treeProvider);
-	vscode.window.registerTreeDataProvider("openSkillsMarketplaceView", marketplaceProvider);
+	context.subscriptions.push(
+		vscode.window.createTreeView("openSkillsMarketplaceView", {
+			treeDataProvider: marketplaceProvider,
+			showCollapseAll: true,
+		})
+	);
+	marketplaceProvider.prefetchAll();
+
+	const searchProvider = new MarketplaceSearchProvider(
+		context.extensionUri,
+		(query) => searchProvider.showResults(marketplaceProvider.searchSkills(query)),
+		(skill) => vscode.commands.executeCommand('open-skills.viewMarketplaceSkill', skill),
+	);
+	context.subscriptions.push(
+		vscode.window.registerWebviewViewProvider(
+			'openSkillsMarketplaceSearchView',
+			searchProvider,
+			{ webviewOptions: { retainContextWhenHidden: true } }
+		)
+	);
 
 	context.subscriptions.push(
 		vscode.languages.registerHoverProvider({ scheme: "file" }, hoverProvider)
@@ -191,28 +211,44 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		})
 	);
 
+	/** 
+	 * Extracts a SkillDefinition from various argument shapes:
+	 * - TreeItem inline button: passes the TreeItem which has a `.skill` property
+	 * - Direct SkillDefinition object with `.path`
+	 * - Array of SkillDefinition objects
+	 */
 	function extractSkill(arg: unknown): SkillDefinition | undefined {
+		if (!arg || typeof arg !== "object") { return undefined; }
+
 		let candidate: any = undefined;
-		if (typeof arg === "object" && arg !== null) {
-			if ("skill" in arg && typeof (arg as any).skill?.path === "string") {
-				candidate = (arg as any).skill;
-			} else if ("path" in arg && typeof (arg as any).path === "string") {
-				candidate = arg;
-			} else if (Array.isArray(arg) && arg[0] && typeof arg[0].path === "string") {
-				candidate = arg[0];
-			}
+		const obj = arg as any;
+
+		// TreeItem from inline button – has .skill property with .path
+		if (obj.skill && typeof obj.skill === "object" && typeof obj.skill.path === "string") {
+			candidate = obj.skill;
+		}
+		// Direct SkillDefinition – has .path and .name
+		else if (typeof obj.path === "string" && typeof obj.name === "string") {
+			candidate = obj;
+		}
+		// Array – take first
+		else if (Array.isArray(arg) && arg[0] && typeof arg[0].path === "string") {
+			candidate = arg[0];
 		}
 
-		if (candidate && typeof candidate.path === "string") {
-			const testPath = candidate.path;
-			const relWorkspace = path.relative(workspaceRoot, testPath);
-			const relGlobal = path.relative(globalSkillsPath, testPath);
-			const isWorkspace = !relWorkspace.startsWith("..") && !path.isAbsolute(relWorkspace);
-			const isGlobal = !relGlobal.startsWith("..") && !path.isAbsolute(relGlobal);
+		if (!candidate || typeof candidate.path !== "string") {
+			return undefined;
+		}
 
-			if (isWorkspace || isGlobal) {
-				return candidate as SkillDefinition;
-			}
+		// Validate the path is under workspace or global skills directory
+		const testPath = candidate.path;
+		const relWorkspace = path.relative(workspaceRoot, testPath);
+		const relGlobal = path.relative(globalSkillsPath, testPath);
+		const isWorkspace = !relWorkspace.startsWith("..") && !path.isAbsolute(relWorkspace);
+		const isGlobal = !relGlobal.startsWith("..") && !path.isAbsolute(relGlobal);
+
+		if (isWorkspace || isGlobal) {
+			return candidate as SkillDefinition;
 		}
 		return undefined;
 	}
@@ -220,33 +256,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	context.subscriptions.push(
 		vscode.commands.registerCommand("open-skills.previewSkill", async (arg: any) => {
 			const skill = extractSkill(arg);
-			if (!skill) {
-				return;
-			}
-
+			if (!skill) { return; }
 			try {
-				const uri = vscode.Uri.file(skill.path);
-				const content = await vscode.workspace.fs.readFile(uri);
-				const text = Buffer.from(content).toString("utf-8");
-
-				const panel = vscode.window.createWebviewPanel(
-					"openSkills.skillPreview",
-					`Skill: ${skill.name}`,
-					vscode.ViewColumn.One,
-					{ enableScripts: true }
-				);
-
-				let renderedHtml = `<pre>${escapeHtml(text)}</pre>`;
-				try {
-					const rendered: string = await vscode.commands.executeCommand("markdown.api.render", text);
-					if (rendered) {
-						renderedHtml = rendered;
-					}
-				} catch {
-					// fallback to <pre>
-				}
-
-				panel.webview.html = buildSkillPreviewHtml(skill.name, skill.description, skill.source, renderedHtml);
+				await vscode.commands.executeCommand("markdown.showPreview", vscode.Uri.file(skill.path));
 			} catch {
 				vscode.window.showErrorMessage(`Failed to open skill: ${skill.name}`);
 			}
@@ -398,38 +410,41 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	context.subscriptions.push(
 		vscode.commands.registerCommand("open-skills.viewMarketplaceSkill", async (arg: any) => {
-			const skill: MarketplaceSkill = arg?.skill || arg;
-			if (!skill) {
-				return;
-			}
-
-			const panel = vscode.window.createWebviewPanel(
-				'marketplaceSkillDetails',
-				`Skill: ${skill.name}`,
-				vscode.ViewColumn.One,
-				{ enableScripts: true }
-			);
-
-			let renderedHtml = `<pre>${escapeHtml(skill.fullContent)}</pre>`;
 			try {
-				const rendered: string = await vscode.commands.executeCommand('markdown.api.render', skill.fullContent);
-				if (rendered) {
-					renderedHtml = rendered;
+				let skill: MarketplaceSkill = arg?.skill || arg;
+				if (!skill?.name) { return; }
+
+				if (!skill.fullContent) {
+					await vscode.window.withProgress({
+						location: vscode.ProgressLocation.Notification,
+						title: `Loading ${skill.name}...`,
+						cancellable: false
+					}, async () => {
+						const full = await githubClient.fetchSkillMetadata(skill.source, skill.name, skill.skillPath);
+						if (full) { skill = full; }
+					});
 				}
-			} catch {
-				// fallback
+
+				const isInstalled = skills.some(s =>
+					s.normalizedName === skill.name.toLowerCase().replace(/\s+/g, "") && s.status !== "missing"
+				);
+
+				const instance = SkillViewPanel.createOrShow(
+					context,
+					skill,
+					isInstalled,
+					async (s) => {
+						try {
+							await vscode.commands.executeCommand('open-skills.installMarketplaceSkill', s);
+							instance.markInstalled();
+						} catch {
+							vscode.window.showErrorMessage(`Failed to install ${s.name}`);
+						}
+					},
+				);
+			} catch (err) {
+				vscode.window.showErrorMessage(`Failed to open skill: ${err instanceof Error ? err.message : String(err)}`);
 			}
-
-			const isInstalled = skills.some(s => s.normalizedName === skill.name.toLowerCase().replace(/\s+/g, "") && s.status !== "missing");
-
-			panel.webview.html = buildMarketplaceSkillViewHtml(skill, renderedHtml, isInstalled);
-
-			panel.webview.onDidReceiveMessage(async (msg) => {
-				if (msg.type === "install") {
-					await vscode.commands.executeCommand("open-skills.installMarketplaceSkill", skill);
-					panel.dispose();
-				}
-			});
 		})
 	);
 
@@ -478,11 +493,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	context.subscriptions.push(
 		vscode.commands.registerCommand("open-skills.openGapAnalysis", () => {
-			const activeSkills = skills.filter(s => s.status === "active");
-			const globalSkills = skills.filter(s => s.status === "imported");
-			const gapResult = gapAnalyzer.analyze(activeSkills, globalSkills);
-			const marketplaceCount = marketplaceProvider.getSkills().length;
-			GapAnalysisPanel.createOrShow(context, gapResult, importSkill, analytics, marketplaceCount);
+			const computeResult = () => {
+				const activeSkills = skills.filter(s => s.status === "active");
+				const globalSkills = skills.filter(s => s.status === "imported");
+				return {
+					result: gapAnalyzer.analyze(activeSkills, globalSkills),
+					marketplaceCount: marketplaceProvider.getSkills().length,
+				};
+			};
+
+			const { result, marketplaceCount } = computeResult();
+			GapAnalysisPanel.createOrShow(
+				context,
+				result,
+				importSkill,
+				analytics,
+				marketplaceCount,
+				() => {
+					const refreshed = computeResult();
+					GapAnalysisPanel.currentPanel?.update(refreshed.result, analytics, refreshed.marketplaceCount);
+				},
+			);
 		})
 	);
 
@@ -554,93 +585,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	} catch (error) {
 		console.error("Open Skills failed to initialize properly:", error);
 	}
-}
-
-function escapeHtml(str: string): string {
-	return str
-		.replace(/&/g, "&amp;")
-		.replace(/</g, "&lt;")
-		.replace(/>/g, "&gt;")
-		.replace(/"/g, "&quot;");
-}
-
-function buildSkillPreviewHtml(name: string, description: string, source: string, renderedContent: string): string {
-	return `<!DOCTYPE html>
-<html lang="en">
-<head>
-	<meta charset="UTF-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>${escapeHtml(name)}</title>
-	<style>
-		body { font-family: var(--vscode-font-family); padding: 20px; color: var(--vscode-editor-foreground); background: var(--vscode-editor-background); }
-		.header { border-bottom: 1px solid var(--vscode-panel-border); padding-bottom: 16px; margin-bottom: 20px; }
-		h1 { font-size: 22px; margin: 0 0 4px; }
-		.meta { color: var(--vscode-descriptionForeground); font-size: 12px; }
-		a { color: var(--vscode-textLink-foreground); }
-		pre { background: var(--vscode-textCodeBlock-background); padding: 12px; border-radius: 4px; overflow-x: auto; }
-		code { font-family: var(--vscode-editor-font-family); }
-	</style>
-</head>
-<body>
-	<div class="header">
-		<h1>${escapeHtml(name)}</h1>
-		<p class="meta">${escapeHtml(description || "")}</p>
-		<p class="meta">Source: <code>${escapeHtml(source)}</code></p>
-	</div>
-	${renderedContent}
-</body>
-</html>`;
-}
-
-function buildMarketplaceSkillViewHtml(skill: MarketplaceSkill, renderedContent: string, isInstalled: boolean): string {
-	const installButton = isInstalled
-		? `<span style="display:inline-flex;align-items:center;gap:6px;padding:6px 16px;border-radius:4px;font-size:13px;background:var(--vscode-testing-iconPassed);color:var(--vscode-editor-background);font-weight:600;">Installed</span>`
-		: `<button id="installBtn" style="display:inline-flex;align-items:center;gap:6px;padding:6px 16px;border-radius:4px;font-size:13px;background:var(--vscode-button-background);color:var(--vscode-button-foreground);border:none;cursor:pointer;font-weight:600;">Install to Workspace</button>`;
-
-	return `<!DOCTYPE html>
-<html lang="en">
-<head>
-	<meta charset="UTF-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>${escapeHtml(skill.name)}</title>
-	<style>
-		body { font-family: var(--vscode-font-family); padding: 20px; color: var(--vscode-editor-foreground); background: var(--vscode-editor-background); }
-		.header { border-bottom: 1px solid var(--vscode-panel-border); padding-bottom: 16px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-start; }
-		.header-left h1 { font-size: 22px; margin: 0 0 6px; }
-		.meta { color: var(--vscode-descriptionForeground); font-size: 12px; margin: 2px 0; }
-		.badge { display:inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
-		a { color: var(--vscode-textLink-foreground); }
-		pre { background: var(--vscode-textCodeBlock-background); padding: 12px; border-radius: 4px; overflow-x: auto; }
-		code { font-family: var(--vscode-editor-font-family); }
-		#installBtn:hover { background: var(--vscode-button-hoverBackground); }
-	</style>
-</head>
-<body>
-	<div class="header">
-		<div class="header-left">
-			<h1>${escapeHtml(skill.name)}</h1>
-			<p class="meta">${escapeHtml(skill.description)}</p>
-			<p class="meta">Source: <code>${escapeHtml(skill.source.owner)}/${escapeHtml(skill.source.repo)}</code></p>
-			${skill.license ? `<p class="meta">License: <span class="badge">${escapeHtml(skill.license)}</span></p>` : ""}
-		</div>
-		<div class="header-right" style="padding-top:4px;">
-			${installButton}
-		</div>
-	</div>
-	${renderedContent}
-	<script>
-		const vscode = acquireVsCodeApi();
-		const btn = document.getElementById('installBtn');
-		if (btn) {
-			btn.addEventListener('click', () => {
-				btn.disabled = true;
-				btn.textContent = 'Installing...';
-				vscode.postMessage({ type: 'install' });
-			});
-		}
-	</script>
-</body>
-</html>`;
 }
 
 export function deactivate(): void { }

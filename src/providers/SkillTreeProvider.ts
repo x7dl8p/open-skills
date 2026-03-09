@@ -39,9 +39,7 @@ export class SkillTreeItem extends vscode.TreeItem {
         super(skill.name, vscode.TreeItemCollapsibleState.None);
         this.skill = skill;
         this.description = skill.source;
-        this.tooltip = new vscode.MarkdownString(
-            `**${skill.name}**\n\n${skill.description || "_No description_"}\n\n**Source:** ${skill.source}`
-        );
+        this.tooltip = skill.source;
         if (skill.status === SkillStatus.Active) {
             this.contextValue = skill.isSynced ? "skillItem.active.synced" : "skillItem.active.unsynced";
         } else {

@@ -77,8 +77,13 @@ export class MarketplaceTreeProvider implements vscode.TreeDataProvider<AnyItem>
     private repos: SkillRepository[] = [];
     private repoItems: RepoTreeItem[] = [];
     private treeCache: Map<string, CategoryNode[]> = new Map();
-    private searchQuery: string = '';
     private installedSkillNames: Set<string> = new Set();
+
+    // Trigram search index
+    private readonly TSIZE = 17576; // 26^3 alphabet slots
+    private trigramIdx: (number[] | null)[] = [];
+    private indexedNames: string[] = [];
+    private indexDirty = true;
 
     constructor(
         private readonly githubClient: GitHubSkillsClient,
@@ -101,6 +106,7 @@ export class MarketplaceTreeProvider implements vscode.TreeDataProvider<AnyItem>
             this.githubClient.fetchSkillTreeFromRepo(repoItem.repo)
                 .then(categories => {
                     this.treeCache.set(cacheKey, categories);
+                    this.indexDirty = true;
                     repoItem.state = 'loaded';
                     repoItem.skillCount = categories.reduce((sum, c) => sum + c.skills.length, 0);
                     repoItem.updateDescription();
@@ -118,6 +124,7 @@ export class MarketplaceTreeProvider implements vscode.TreeDataProvider<AnyItem>
         this.treeCache.clear();
         this.githubClient.clearCache();
         this.repoItems = this.repos.map(r => new RepoTreeItem(r));
+        this.indexDirty = true;
         this._onDidChangeTreeData.fire();
         this.prefetchAll();
     }
@@ -125,24 +132,6 @@ export class MarketplaceTreeProvider implements vscode.TreeDataProvider<AnyItem>
     setInstalledSkills(names: Set<string>): void {
         this.installedSkillNames = names;
         this._onDidChangeTreeData.fire();
-    }
-
-    setSearchQuery(query: string): void {
-        this.searchQuery = query.toLowerCase();
-        this._onDidChangeTreeData.fire();
-        vscode.commands.executeCommand('setContext', 'openSkills:searchActive', query.length > 0);
-    }
-
-    clearSearch(): void {
-        this.setSearchQuery('');
-    }
-
-    isSearchActive(): boolean {
-        return this.searchQuery.length > 0;
-    }
-
-    currentSearch(): string {
-        return this.searchQuery;
     }
 
     getSkills(): MarketplaceSkill[] {
@@ -155,6 +144,18 @@ export class MarketplaceTreeProvider implements vscode.TreeDataProvider<AnyItem>
             }
         }
         return all;
+    }
+
+    searchSkills(query: string): Array<{ skill: MarketplaceSkill; installed: boolean }> {
+        if (!query) { return []; }
+        const all = this.getSkills();
+        const ranked = this.searchByTrigram(query.toLowerCase());
+        if (ranked.length === 0) { return []; }
+        const rankMap = new Map(ranked.map((n, i) => [n, i]));
+        return all
+            .filter(s => rankMap.has(s.name))
+            .sort((a, b) => (rankMap.get(a.name) ?? Infinity) - (rankMap.get(b.name) ?? Infinity))
+            .map(s => ({ skill: s, installed: this.installedSkillNames.has(s.name) }));
     }
 
     getSkillByName(name: string): MarketplaceSkill | undefined {
@@ -179,9 +180,6 @@ export class MarketplaceTreeProvider implements vscode.TreeDataProvider<AnyItem>
                 const empty = new vscode.TreeItem('No repositories configured', vscode.TreeItemCollapsibleState.None);
                 empty.iconPath = new vscode.ThemeIcon('info');
                 return [empty as unknown as AnyItem];
-            }
-            if (this.searchQuery) {
-                return this.getSearchResults();
             }
             return this.repoItems;
         }
@@ -210,6 +208,7 @@ export class MarketplaceTreeProvider implements vscode.TreeDataProvider<AnyItem>
             try {
                 const categories = await this.githubClient.fetchSkillTreeFromRepo(repoItem.repo);
                 this.treeCache.set(cacheKey, categories);
+                this.indexDirty = true;
                 repoItem.state = 'loaded';
                 repoItem.skillCount = categories.reduce((sum, c) => sum + c.skills.length, 0);
                 repoItem.updateDescription();
@@ -235,22 +234,65 @@ export class MarketplaceTreeProvider implements vscode.TreeDataProvider<AnyItem>
         return categories.map(cat => new CategoryTreeItem(cat, repoItem.repo));
     }
 
-    private getSearchResults(): AnyItem[] {
-        const all = this.getSkills();
-        const filtered = all.filter(s => s.name.toLowerCase().includes(this.searchQuery));
+    private rebuildIndex(): void {
+        const names: string[] = [];
+        for (const cats of this.treeCache.values()) {
+            for (const cat of cats) {
+                for (const node of cat.skills) { names.push(node.name); }
+            }
+        }
+        this.indexedNames = names;
+        const idx = new Array<number[] | null>(this.TSIZE).fill(null);
+        for (let i = 0; i < names.length; i++) {
+            const s = names[i].toLowerCase();
+            for (let j = 0; j + 2 < s.length; j++) {
+                const c0 = s.charCodeAt(j)     - 97;
+                const c1 = s.charCodeAt(j + 1) - 97;
+                const c2 = s.charCodeAt(j + 2) - 97;
+                if (c0 < 0 || c0 > 25 || c1 < 0 || c1 > 25 || c2 < 0 || c2 > 25) { continue; }
+                const t = c0 * 961 + c1 * 31 + c2;
+                if (!idx[t]) { idx[t] = []; }
+                idx[t].push(i);
+            }
+        }
+        this.trigramIdx = idx;
+        this.indexDirty = false;
+    }
 
-        if (filtered.length === 0) {
-            const noRes = new vscode.TreeItem(`No results for "${this.searchQuery}"`, vscode.TreeItemCollapsibleState.None);
-            noRes.iconPath = new vscode.ThemeIcon('search-stop');
-            return [noRes as unknown as AnyItem];
+    private searchByTrigram(query: string): string[] {
+        if (this.indexDirty) { this.rebuildIndex(); }
+        const names = this.indexedNames;
+        const q = query.toLowerCase();
+
+        // Short query — trigrams need ≥3 chars, fall back to substring
+        if (q.length < 3) {
+            return names.filter(n => n.toLowerCase().includes(q));
         }
 
-        return filtered.map(s =>
-            new MarketplaceSkillTreeItem(
-                { name: s.name, skillPath: s.skillPath, source: s.source },
-                this.installedSkillNames.has(s.name)
-            )
-        );
+        const scores = new Int16Array(names.length);
+        const seen   = new Uint8Array(this.TSIZE);
+
+        for (let i = 0; i + 2 < q.length; i++) {
+            const c0 = q.charCodeAt(i)     - 97;
+            const c1 = q.charCodeAt(i + 1) - 97;
+            const c2 = q.charCodeAt(i + 2) - 97;
+            if (c0 < 0 || c0 > 25 || c1 < 0 || c1 > 25 || c2 < 0 || c2 > 25) { continue; }
+            const t = c0 * 961 + c1 * 31 + c2;
+            if (seen[t]) { continue; }
+            seen[t] = 1;
+            const hits = this.trigramIdx[t];
+            if (!hits) { continue; }
+            for (let k = 0; k < hits.length; k++) { scores[hits[k]]++; }
+        }
+
+        const flat: number[] = [];
+        for (let i = 0; i < scores.length; i++) {
+            if (scores[i] > 0) { flat.push(i, scores[i]); }
+        }
+        const pairs = flat.length >> 1;
+        const order = Array.from({ length: pairs }, (_, i) => i);
+        order.sort((a, b) => flat[b * 2 + 1] - flat[a * 2 + 1]);
+        return order.map(i => names[flat[i * 2]]);
     }
 }
 

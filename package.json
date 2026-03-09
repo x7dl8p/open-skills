@@ -61,6 +61,14 @@
           "id": "openSkillsMarketplaceView",
           "name": "Marketplace",
           "contextualTitle": "Skills Marketplace"
+        },
+        {
+          "id": "openSkillsMarketplaceSearchView",
+          "name": "Search",
+          "contextualTitle": "Skills Marketplace",
+          "type": "webview",
+          "icon": "assets/open-skills-outline.svg",
+          "visibility": "collapsed"
         }
       ]
     },
@@ -136,18 +144,6 @@
         "icon": "$(refresh)"
       },
       {
-        "command": "open-skills.searchMarketplace",
-        "title": "Search Skills",
-        "category": "Open Skills Marketplace",
-        "icon": "$(search)"
-      },
-      {
-        "command": "open-skills.clearMarketplaceSearch",
-        "title": "Clear Search",
-        "category": "Open Skills Marketplace",
-        "icon": "$(search-stop)"
-      },
-      {
         "command": "open-skills.installMarketplaceSkill",
         "title": "Install Skill",
         "category": "Open Skills",
@@ -181,16 +177,6 @@
         {
           "command": "open-skills.refreshMarketplace",
           "when": "view == openSkillsMarketplaceView",
-          "group": "navigation"
-        },
-        {
-          "command": "open-skills.searchMarketplace",
-          "when": "view == openSkillsMarketplaceView && !openSkills:searchActive",
-          "group": "navigation"
-        },
-        {
-          "command": "open-skills.clearMarketplaceSearch",
-          "when": "view == openSkillsMarketplaceView && openSkills:searchActive",
           "group": "navigation"
         },
         {
@@ -364,8 +350,5 @@
     "npm-run-all": "^4.1.5",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.54.0"
-  },
-  "dependencies": {
-    "@vscode/codicons": "^0.0.44"
   }
 }

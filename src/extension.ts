@@ -6,6 +6,7 @@ import { ConfigService } from "./services/ConfigService";
 import { SkillHoverProvider, SkillDecorationProvider } from "./decorations/SkillHoverProvider";
 import { SkillTreeProvider } from "./providers/SkillTreeProvider";
 import { MarketplaceTreeProvider, resolveGlobalSkillsPath } from "./providers/MarketplaceTreeProvider";
+import { MarketplaceSearchProvider } from "./providers/MarketplaceSearchProvider";
 import { GitHubSkillsClient } from "./github/GitHubSkillsClient";
 import { runOnboardingWizard } from "./onboarding/OnboardingWizard";
 import { showAboutPanel } from "./webviews/AboutPanel";
@@ -85,6 +86,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		})
 	);
 	marketplaceProvider.prefetchAll();
+
+	const searchProvider = new MarketplaceSearchProvider(
+		context.extensionUri,
+		(query) => searchProvider.showResults(marketplaceProvider.searchSkills(query)),
+		(skill) => vscode.commands.executeCommand('open-skills.viewMarketplaceSkill', skill),
+	);
+	context.subscriptions.push(
+		vscode.window.registerWebviewViewProvider(
+			'openSkillsMarketplaceSearchView',
+			searchProvider,
+			{ webviewOptions: { retainContextWhenHidden: true } }
+		)
+	);
 
 	context.subscriptions.push(
 		vscode.languages.registerHoverProvider({ scheme: "file" }, hoverProvider)
@@ -327,25 +341,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 	context.subscriptions.push(
 		vscode.commands.registerCommand("open-skills.refreshMarketplace", async () => {
 			await marketplaceProvider.refresh();
-		})
-	);
-
-	context.subscriptions.push(
-		vscode.commands.registerCommand("open-skills.searchMarketplace", async () => {
-			const query = await vscode.window.showInputBox({
-				prompt: "Filter marketplace skills",
-				value: marketplaceProvider.currentSearch(),
-				placeHolder: "e.g. typescript, react, agent…",
-			});
-			if (query !== undefined) {
-				marketplaceProvider.setSearchQuery(query);
-			}
-		})
-	);
-
-	context.subscriptions.push(
-		vscode.commands.registerCommand("open-skills.clearMarketplaceSearch", () => {
-			marketplaceProvider.clearSearch();
 		})
 	);
 

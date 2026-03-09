@@ -91,33 +91,8 @@ export class GapAnalysisPanel {
       : "Never";
     const mpCount = marketplaceCount ?? 0;
 
-    const missingRows = missing
-      .map(
-        (s) => `
-		<tr>
-		  <td>${this.esc(s.name)}</td>
-		  <td><code>${this.esc(s.source)}</code></td>
-		  <td>${this.esc(s.description.substring(0, 80))}${s.description.length > 80 ? "…" : ""}</td>
-		  <td>
-			<button class="vscode-button" data-skill='${JSON.stringify(s).replace(/'/g, "&#39;")}'>
-			  Import
-			</button>
-		  </td>
-		</tr>`
-      )
-      .join("");
-
-    const presentRows = present
-      .map(
-        (s) => `
-		<tr>
-		  <td>${this.esc(s.name)}</td>
-		  <td><code>${this.esc(s.source)}</code></td>
-		  <td>${this.esc(s.description.substring(0, 80))}${s.description.length > 80 ? "…" : ""}</td>
-		  <td><span class="badge-ok">Active</span></td>
-		</tr>`
-      )
-      .join("");
+    const missingRows = missing.map(s => this.buildRow(s, "import-workspace", "Import to Workspace")).join("");
+    const presentRows = present.map(s => this.buildRow(s, "add-library", "Add to Library")).join("");
 
     return `<!DOCTYPE html>
 <html lang="en">
@@ -316,7 +291,7 @@ export class GapAnalysisPanel {
         <th style="width: 15%">Name</th>
         <th style="width: 25%">Source</th>
         <th style="width: 45%">Description</th>
-        <th style="width: 15%">Status</th>
+        <th style="width: 15%">Action</th>
       </tr>
     </thead>
     <tbody>
@@ -326,17 +301,39 @@ export class GapAnalysisPanel {
 
   <script>
     const vscode = acquireVsCodeApi();
+    const LOADING_LABELS = {
+      'import-workspace': 'Importing...',
+      'add-library': 'Adding...'
+    };
     document.querySelectorAll('.vscode-button').forEach(btn => {
       btn.addEventListener('click', () => {
         const skill = JSON.parse(btn.getAttribute('data-skill'));
+        const action = btn.getAttribute('data-action');
         btn.disabled = true;
-        btn.textContent = 'Importing...';
+        btn.textContent = LOADING_LABELS[action] || 'Working...';
         vscode.postMessage({ type: 'import', skill });
       });
     });
   </script>
 </body>
 </html>`;
+  }
+
+  private buildRow(skill: SkillDefinition, action: string, label: string): string {
+    const desc = skill.description.length > 80
+      ? this.esc(skill.description.substring(0, 80)) + "…"
+      : this.esc(skill.description);
+    return `
+      <tr>
+        <td>${this.esc(skill.name)}</td>
+        <td><code>${this.esc(skill.source)}</code></td>
+        <td>${desc}</td>
+        <td>
+          <button class="vscode-button" data-action="${action}" data-skill='${JSON.stringify(skill).replace(/'/g, "&#39;")}'>
+            ${label}
+          </button>
+        </td>
+      </tr>`;
   }
 
   private esc(str: string): string {

@@ -76,7 +76,10 @@ export class GitHubSkillsClient {
             .map(item => item.path.slice(0, -"/SKILL.md".length));
 
         const unique = Array.from(new Set(rawPaths));
-        const noContainers = unique.filter(p => !p.split("/").some(s => containerSegs.has(s)));
+        const noContainers = unique.filter(p => {
+            const rel = prefix ? p.slice(prefix.length) : p;
+            return !rel.split("/").some(s => containerSegs.has(s));
+        });
         const deduped = noContainers.filter(p => !noContainers.some(o => o !== p && o.startsWith(p + "/")));
 
         const byCategory = new Map<string, SkillNode[]>();

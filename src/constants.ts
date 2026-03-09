@@ -117,4 +117,16 @@ export const DEFAULT_SKILL_REPOSITORIES: ReadonlyArray<{
             path: "",
             branch: "master"
         },
+        {
+            owner: "K-Dense-AI",
+            repo: "claude-scientific-skills",
+            path: "scientific-skills",
+            branch: "main"
+        },
+        {
+            owner: "pbakaus",
+            repo: "impeccable",
+            path: "source/skills",
+            branch: "main"
+        },
     ];

@@ -398,9 +398,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	context.subscriptions.push(
 		vscode.commands.registerCommand("open-skills.viewMarketplaceSkill", async (arg: any) => {
-			const skill: MarketplaceSkill = arg?.skill || arg;
+			let skill: MarketplaceSkill = arg?.skill || arg;
 			if (!skill) {
 				return;
+			}
+
+			if (!skill.fullContent) {
+				await vscode.window.withProgress({
+					location: vscode.ProgressLocation.Notification,
+					title: `Loading ${skill.name}...`,
+					cancellable: false
+				}, async () => {
+					const full = await githubClient.fetchSkillMetadata(skill.source, skill.name, skill.skillPath);
+					if (full) { skill = full; }
+				});
 			}
 
 			const panel = vscode.window.createWebviewPanel(
@@ -410,9 +421,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				{ enableScripts: true }
 			);
 
-			let renderedHtml = `<pre>${escapeHtml(skill.fullContent)}</pre>`;
+			let renderedHtml = `<pre>${escapeHtml(skill.fullContent || '')}</pre>`;
 			try {
-				const rendered: string = await vscode.commands.executeCommand('markdown.api.render', skill.fullContent);
+				const rendered: string = await vscode.commands.executeCommand('markdown.api.render', skill.fullContent || '');
 				if (rendered) {
 					renderedHtml = rendered;
 				}

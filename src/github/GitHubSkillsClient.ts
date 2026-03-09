@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { MarketplaceSkill, SkillRepository, SkillMetadata, CacheEntry, DEFAULT_SKILL_REPOSITORIES } from "../types";
+import { MarketplaceSkill, SkillRepository, SkillMetadata, CacheEntry, CategoryNode, SkillNode, DEFAULT_SKILL_REPOSITORIES } from "../types";
 
 interface GitTreeItem {
     path: string;
@@ -46,73 +46,52 @@ export class GitHubSkillsClient {
         if (repo.singleSkill) {
             return this.fetchSingleSkill(repo);
         }
-
-        const tree = await this.fetchRepoTree(repo.owner, repo.repo, repo.branch);
-        const prefix = repo.path ? (repo.path.endsWith('/') ? repo.path : repo.path + '/') : '';
-
-        let skillPaths: string[];
-
-        if (tree.truncated) {
-            skillPaths = await this.fetchSkillPathsFromContents(repo.owner, repo.repo, repo.branch, repo.path || "");
-        } else {
-            skillPaths = tree.tree
-                .filter((item) =>
-                    item.type === "blob" &&
-                    item.path.startsWith(prefix) &&
-                    (item.path.endsWith("/SKILL.md") || item.path === "SKILL.md")
-                )
-                .map((item) => {
-                    const idx = item.path.lastIndexOf("/");
-                    return idx === -1 ? "" : item.path.substring(0, idx);
-                });
-        }
-
-        const uniquePaths = Array.from(new Set(skillPaths));
-
-        const results = await Promise.all(
-            uniquePaths.map(async (skillPath) => {
-                try {
-                    const skillName = skillPath.split("/").pop() || repo.repo;
-                    return await this.fetchSkillMetadata(repo, skillName, skillPath);
-                } catch {
-                    return null;
-                }
-            })
+        const categories = await this.fetchSkillTreeFromRepo(repo);
+        return categories.flatMap(cat =>
+            cat.skills.map(node => ({
+                name: node.name,
+                description: "",
+                source: node.source,
+                skillPath: node.skillPath,
+            }))
         );
-
-        return results.filter((s): s is MarketplaceSkill => s !== null);
     }
 
-    private async fetchSkillPathsFromContents(
-        owner: string,
-        repo: string,
-        branch: string,
-        basePath: string
-    ): Promise<string[]> {
-        const url = basePath
-            ? `${API_BASE}/repos/${owner}/${repo}/contents/${basePath}?ref=${branch}`
-            : `${API_BASE}/repos/${owner}/${repo}/contents/?ref=${branch}`;
-
-        const response = await this.fetchWithAuth(url);
-        if (!response.ok) {
-            return [];
+    async fetchSkillTreeFromRepo(repo: SkillRepository): Promise<CategoryNode[]> {
+        if (repo.singleSkill) {
+            const name = repo.path.split("/").pop() || repo.repo;
+            return [{ name: "", skills: [{ name, skillPath: repo.path, source: repo }] }];
         }
 
-        const items = await response.json() as Array<{ name: string; path: string; type: string }>;
-        const skillPaths: string[] = [];
+        const tree = await this.fetchRepoTree(repo.owner, repo.repo, repo.branch);
+        const prefix = repo.path ? (repo.path.endsWith("/") ? repo.path : repo.path + "/") : "";
+        const containerSegs = new Set(["skills", "assets", "commands", "examples", "templates"]);
 
-        for (const item of items) {
-            if (item.type === "dir") {
-                const skillFilePath = `${item.path}/SKILL.md`;
-                const testUrl = `${RAW_BASE}/${owner}/${repo}/${branch}/${skillFilePath}`;
-                const testRes = await fetch(testUrl, { method: "HEAD" });
-                if (testRes.ok) {
-                    skillPaths.push(item.path);
-                }
-            }
+        const rawPaths = tree.tree
+            .filter(item =>
+                item.type === "blob" &&
+                item.path.startsWith(prefix) &&
+                item.path.endsWith("/SKILL.md")
+            )
+            .map(item => item.path.slice(0, -"/SKILL.md".length));
+
+        const unique = Array.from(new Set(rawPaths));
+        const noContainers = unique.filter(p => !p.split("/").some(s => containerSegs.has(s)));
+        const deduped = noContainers.filter(p => !noContainers.some(o => o !== p && o.startsWith(p + "/")));
+
+        const byCategory = new Map<string, SkillNode[]>();
+        for (const fullPath of deduped) {
+            const relPath = prefix ? fullPath.slice(prefix.length) : fullPath;
+            const slash = relPath.indexOf("/");
+            const category = slash === -1 ? "" : relPath.slice(0, slash);
+            const name = fullPath.split("/").pop()!;
+            if (!byCategory.has(category)) { byCategory.set(category, []); }
+            byCategory.get(category)!.push({ name, skillPath: fullPath, source: repo });
         }
 
-        return skillPaths;
+        return Array.from(byCategory.entries())
+            .map(([name, skills]) => ({ name, skills: skills.sort((a, b) => a.name.localeCompare(b.name)) }))
+            .sort((a, b) => a.name.localeCompare(b.name));
     }
 
     private async fetchRepoTree(owner: string, repo: string, branch: string): Promise<GitTreeResponse> {

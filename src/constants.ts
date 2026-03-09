@@ -129,4 +129,10 @@ export const DEFAULT_SKILL_REPOSITORIES: ReadonlyArray<{
             path: "source/skills",
             branch: "main"
         },
+        {
+            owner: "alirezarezvani",
+            repo: "claude-skills",
+            path: "",
+            branch: "main"
+        },
     ];

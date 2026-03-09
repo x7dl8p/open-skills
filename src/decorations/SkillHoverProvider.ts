@@ -54,9 +54,15 @@ export class SkillHoverProvider implements vscode.HoverProvider {
         }
 
         md.appendMarkdown(`---\n\n`);
-        md.appendMarkdown(
-            `[$(add) Import Skill](${importCmd})  [$(go-to-file) View](${viewCmd})`
-        );
+
+        const isLocal = skill.source !== "Global Skills";
+        if (isLocal) {
+            md.appendMarkdown(
+                `[$(add) Add to My library](${importCmd})  [$(go-to-file) View](${viewCmd})`
+            );
+        } else {
+            md.appendMarkdown(`[$(go-to-file) View](${viewCmd})`);
+        }
 
         return new vscode.Hover(md, wordRange);
     }
